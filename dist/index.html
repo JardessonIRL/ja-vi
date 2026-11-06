@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Já Vi</title>
+<meta name="theme-color" content="#0b1020">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Já Vi">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
+<style>
+:root{
+  --bg:#0b1020; --card:#151c30; --card2:#1d2740; --text:#f8fafc; --muted:#94a3b8;
+  --accent:#38bdf8; --accent2:#fb7185; --good:#34d399; --line:#28344f;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  background:linear-gradient(180deg,#0b1020,#111827) fixed; color:var(--text);
+  font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif; min-height:100vh;
+  -webkit-tap-highlight-color:transparent;
+}
+button,input{font:inherit;color:inherit}
+.app{max-width:760px;margin:auto;padding:16px 16px 96px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px}
+.title{font-size:20px;font-weight:800;line-height:1.2}
+.sub{font-size:12px;color:var(--muted)}
+.card{background:rgba(21,28,48,.96);border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:12px}
+.btn{
+  border:0;border-radius:12px;padding:12px 16px;font-weight:700;cursor:pointer;
+  background:var(--accent);color:#04121c;
+}
+.btn.ghost{background:var(--card2);color:var(--text);border:1px solid var(--line)}
+.btn.small{padding:7px 11px;font-size:13px;border-radius:10px}
+.btn.danger{background:transparent;color:var(--accent2);border:1px solid var(--line)}
+.btn:disabled{opacity:.5;cursor:default}
+.icon-btn{background:var(--card2);border:1px solid var(--line);border-radius:12px;width:42px;height:42px;cursor:pointer;font-size:18px;flex:none}
+input.field{
+  width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--line);
+  background:var(--card2);outline:none;font-size:16px;
+}
+input.field:focus{border-color:var(--accent)}
+.row{display:flex;gap:8px;align-items:center}
+.stack>*+*{margin-top:10px}
+h2{font-size:15px;margin:0 0 10px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.tabs{
+  position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:center;gap:8px;
+  padding:10px 16px calc(10px + env(safe-area-inset-bottom));
+  background:rgba(11,16,32,.94);border-top:1px solid var(--line);backdrop-filter:blur(8px);
+}
+.tabs button{flex:1;max-width:240px;background:transparent;border:0;border-radius:12px;padding:10px;color:var(--muted);font-weight:700;cursor:pointer}
+.tabs button.on{background:var(--card2);color:var(--text)}
+.list{display:flex;flex-direction:column;gap:8px}
+.movie{display:flex;gap:12px;align-items:center;background:var(--card2);border:1px solid var(--line);border-radius:14px;padding:8px}
+.poster{width:46px;height:68px;border-radius:8px;background:#0f172a;flex:none;object-fit:cover;display:grid;place-items:center;font-size:20px}
+.movie .info{flex:1;min-width:0}
+.movie .name{font-weight:700;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.movie .meta{font-size:12px;color:var(--muted);margin-top:2px}
+.badge{font-size:12px;color:var(--good);font-weight:700;white-space:nowrap}
+.person{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--card2);border:1px solid var(--line);border-radius:14px;padding:12px;cursor:pointer}
+.person:hover{border-color:var(--accent)}
+.avatar{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;font-weight:800;color:#04121c;flex:none}
+.person .info{flex:1;min-width:0}
+.person .name{font-weight:700}
+.count{font-size:22px;font-weight:800}
+.results{margin-top:8px}
+.empty{color:var(--muted);text-align:center;padding:24px 8px;font-size:14px}
+.status{font-size:12px;color:var(--muted);min-height:16px}
+.toast{
+  position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:var(--text);color:#0b1020;
+  padding:10px 16px;border-radius:12px;font-weight:700;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;
+  max-width:calc(100% - 32px);text-align:center;
+}
+.toast.on{opacity:1}
+.hero{text-align:center;padding:28px 0 12px}
+.hero .emoji{font-size:52px}
+.hero .title{font-size:28px;margin-top:6px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{background:var(--card2);border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:13px;cursor:pointer;color:var(--muted)}
+.chip.on{color:var(--text);border-color:var(--accent)}
+.hidden{display:none!important}
+a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="app" id="app"></div>
+<nav class="tabs hidden" id="tabs">
+  <button data-tab="mine">🎬 Minha lista</button>
+  <button data-tab="people">👥 Pessoas</button>
+</nav>
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+
+// ---------------- helpers ----------------
+const $app = document.getElementById('app');
+const $tabs = document.getElementById('tabs');
+const STORE_KEY = 'javi:groups';
+const COLORS = ['#38bdf8','#fb7185','#34d399','#fbbf24','#a78bfa','#f472b6','#2dd4bf','#fb923c'];
+
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+const colorFor = id => COLORS[[...String(id)].reduce((a, c) => a + c.charCodeAt(0), 0) % COLORS.length];
+
+function loadStore(){ try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; } catch { return {}; } }
+function saveStore(s){ try { localStorage.setItem(STORE_KEY, JSON.stringify(s)); } catch {} }
+
+let toastTimer;
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('on');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2200);
+}
+
+async function api(path, opts = {}){
+  const res = await fetch('/api' + path, {
+    method: opts.method || 'GET',
+    headers: Object.assign({'content-type':'application/json'}, opts.token ? {authorization:'Bearer ' + opts.token} : {}),
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+    keepalive: !!opts.keepalive
+  });
+  const data = await res.json().catch(() => ({ok:false, error:'network'}));
+  if (!res.ok || !data.ok) { const e = new Error(data.error || 'error'); e.status = res.status; throw e; }
+  return data;
+}
+
+// Two entries are the same movie if keys match, or title matches and years don't conflict.
+function sameMovie(a, b){
+  if (a.k === b.k) return true;
+  if (norm(a.t) !== norm(b.t)) return false;
+  return !a.y || !b.y || a.y === b.y;
+}
+
+function imdbLink(m){
+  const id = /^imdb:(tt\d+)$/.exec(m.k || '');
+  return id ? ` · <a href="https://www.imdb.com/title/${id[1]}/" target="_blank" rel="noopener">IMDb ↗</a>` : '';
+}
+
+function posterHtml(m){
+  return m.p ? `<img class="poster" src="${esc(m.p)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<div class="poster">🎞️</div>`;
+}
+
+// ---------------- state ----------------
+const S = {
+  code: null,          // group code
+  me: null,            // {id, token, name}
+  group: null,         // {name, members}
+  groupAt: 0,
+  mine: [],            // my movies
+  tab: 'mine',
+  view: null,          // id of person being viewed
+  cache: {},           // id -> {movies, at}
+  dirty: false,
+  saving: false,
+  sort: 'recent',
+  filter: ''
+};
+
+// ---------------- routing ----------------
+function parseRoute(){
+  const m = location.pathname.match(/^\/g\/([A-Za-z2-9]{6,10})\/?$/);
+  return m ? m[1].toUpperCase() : null;
+}
+
+async function start(){
+  const code = parseRoute();
+  if (!code) return renderHome();
+
+  S.code = code;
+  const store = loadStore();
+
+  // Personal link: /g/CODE#k=ID.TOKEN logs in on another device.
+  const hk = location.hash.match(/k=([a-z0-9]+)\.([A-Za-z0-9]+)/);
+  if (hk) {
+    store[code] = Object.assign(store[code] || {}, {id: hk[1], token: hk[2]});
+    saveStore(store);
+    history.replaceState(null, '', location.pathname);
+  }
+  S.me = store[code] && store[code].id ? store[code] : null;
+
+  $app.innerHTML = `<div class="empty">Carregando…</div>`;
+  try {
+    await loadGroup();
+  } catch (e) {
+    $app.innerHTML = `<div class="hero"><div class="emoji">🤔</div><div class="title">Grupo não encontrado</div>
+      <p class="sub">Confira o link ou crie um grupo novo.</p><a class="btn" href="/" style="display:inline-block;text-decoration:none">Início</a></div>`;
+    return;
+  }
+
+  if (S.me && !S.group.members[S.me.id]) {
+    // Was removed or data lost: try to load directly, otherwise ask name again.
+    try { await api(`/g/${S.code}/m/${S.me.id}`); } catch { S.me = null; delete store[code]; saveStore(store); }
+  }
+
+  if (!S.me) return renderJoin();
+  await enterGroup();
+}
+
+async function loadGroup(){
+  const g = await api(`/g/${S.code}`);
+  S.group = {name: g.name, members: g.members};
+  S.groupAt = Date.now();
+  const store = loadStore();
+  if (store[S.code]) { store[S.code].groupName = g.name; saveStore(store); }
+}
+
+// ---------------- home ----------------
+function renderHome(){
+  $tabs.classList.add('hidden');
+  const store = loadStore();
+  const recent = Object.entries(store).filter(([, v]) => v.id);
+  $app.innerHTML = `
+    <div class="hero"><div class="emoji">🎬</div><div class="title">Já Vi</div>
+      <p class="sub">Marque os filmes que você já assistiu e veja as listas da galera.</p></div>
+    <div class="card stack">
+      <h2>Criar grupo</h2>
+      <input class="field" id="gname" maxlength="40" placeholder="Nome do grupo (ex: Cinéfilos da firma)">
+      <button class="btn" id="create" style="width:100%">Criar e gerar link</button>
+    </div>
+    <div class="card stack">
+      <h2>Já tenho um código</h2>
+      <div class="row"><input class="field" id="gcode" maxlength="10" placeholder="Código do grupo" autocapitalize="characters">
+      <button class="btn ghost" id="go">Entrar</button></div>
+    </div>
+    ${recent.length ? `<div class="card"><h2>Meus grupos</h2><div class="list">${recent.map(([c, v]) => `
+      <a class="person" href="/g/${esc(c)}" style="text-decoration:none;color:inherit">
+        <div class="avatar" style="background:${colorFor(c)}">🎬</div>
+        <div class="info"><div class="name">${esc(v.groupName || c)}</div><div class="sub">como ${esc(v.name || '')}</div></div>
+      </a>`).join('')}</div></div>` : ''}
+  `;
+  document.getElementById('create').onclick = async e => {
+    e.target.disabled = true;
+    try {
+      const g = await api('/g', {method:'POST', body:{name: document.getElementById('gname').value}});
+      location.href = '/g/' + g.code;
+    } catch { toast('Não foi possível criar. Tente de novo.'); e.target.disabled = false; }
+  };
+  const go = () => {
+    const c = document.getElementById('gcode').value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (c) location.href = '/g/' + c;
+  };
+  document.getElementById('go').onclick = go;
+  document.getElementById('gcode').onkeydown = e => { if (e.key === 'Enter') go(); };
+}
+
+// ---------------- join ----------------
+function renderJoin(){
+  $tabs.classList.add('hidden');
+  const people = Object.values(S.group.members);
+  $app.innerHTML = `
+    <div class="hero"><div class="emoji">👋</div><div class="title">${esc(S.group.name)}</div>
+      <p class="sub">${people.length ? people.length + ' pessoa(s) no grupo' : 'Você é a primeira pessoa aqui!'}</p></div>
+    <div class="card stack">
+      <h2>Qual é o seu nome?</h2>
+      <input class="field" id="name" maxlength="30" placeholder="Seu nome" autocomplete="nickname">
+      <button class="btn" id="join" style="width:100%">Entrar no grupo</button>
+      <p class="sub">Já entrou em outro aparelho? Use o seu <b>link pessoal</b> (em Ajustes no outro aparelho) para continuar com a mesma lista.</p>
+    </div>`;
+  const input = document.getElementById('name');
+  input.focus();
+  const join = async () => {
+    const name = input.value.trim();
+    if (!name) return input.focus();
+    const exists = people.some(p => norm(p.n) === norm(name));
+    if (exists && !confirm(`Já existe alguém chamado "${name}". Entrar mesmo assim como outra pessoa?`)) return;
+    document.getElementById('join').disabled = true;
+    try {
+      const r = await api(`/g/${S.code}/join`, {method:'POST', body:{name}});
+      S.me = {id: r.id, token: r.token, name: r.name, groupName: S.group.name};
+      const store = loadStore(); store[S.code] = S.me; saveStore(store);
+      S.group.members[r.id] = {n: r.name, c: 0, u: Date.now()};
+      await enterGroup();
+    } catch (e) {
+      toast(e.message === 'group_full' ? 'Grupo cheio.' : 'Erro ao entrar. Tente de novo.');
+      document.getElementById('join').disabled = false;
+    }
+  };
+  document.getElementById('join').onclick = join;
+  input.onkeydown = e => { if (e.key === 'Enter') join(); };
+}
+
+// ---------------- group ----------------
+async function enterGroup(){
+  try {
+    const r = await api(`/g/${S.code}/m/${S.me.id}`);
+    S.mine = r.movies;
+    S.me.name = r.name;
+  } catch { S.mine = []; }
+  $tabs.classList.remove('hidden');
+  render();
+}
+
+function setTab(tab){
+  S.tab = tab; S.view = null; S.filter = '';
+  render(); window.scrollTo(0, 0);
+}
+$tabs.onclick = e => { const b = e.target.closest('button'); if (b) setTab(b.dataset.tab); };
+
+function render(){
+  [...$tabs.children].forEach(b => b.classList.toggle('on', b.dataset.tab === S.tab && !S.view));
+  if (S.view) return renderPerson(S.view);
+  if (S.tab === 'people') return renderPeople();
+  if (S.tab === 'settings') return renderSettings();
+  renderMine();
+}
+
+function header(extra = ''){
+  return `<div class="top">
+    <div><div class="title">${esc(S.group.name)}</div><div class="sub">Olá, ${esc(S.me.name)} · <span id="saveStatus">${S.saving ? 'Salvando…' : S.dirty ? 'Alterações pendentes' : ''}</span></div></div>
+    <div class="row">${extra}
+      <button class="icon-btn" id="share" title="Compartilhar link">🔗</button>
+      <button class="icon-btn" id="settings" title="Ajustes">⚙️</button>
+    </div></div>`;
+}
+function bindHeader(){
+  document.getElementById('share').onclick = shareGroup;
+  document.getElementById('settings').onclick = () => { S.tab = 'settings'; S.view = null; render(); };
+}
+
+async function shareGroup(){
+  const url = location.origin + '/g/' + S.code;
+  if (navigator.share) {
+    try { await navigator.share({title: 'Já Vi — ' + S.group.name, text: 'Entra no grupo e marca os filmes que você já viu!', url}); return; } catch {}
+  }
+  try { await navigator.clipboard.writeText(url); toast('Link copiado!'); } catch { prompt('Copie o link:', url); }
+}
+
+function sorted(list){
+  const arr = list.slice();
+  if (S.sort === 'az') arr.sort((a, b) => a.t.localeCompare(b.t, 'pt-BR'));
+  else arr.sort((a, b) => (b.a || 0) - (a.a || 0));
+  return arr;
+}
+function filtered(list){
+  const f = norm(S.filter);
+  return f ? list.filter(m => norm(m.t).includes(f)) : list;
+}
+function sortChips(){
+  return `<div class="chips">
+    <button class="chip ${S.sort === 'recent' ? 'on' : ''}" data-sort="recent">Recentes</button>
+    <button class="chip ${S.sort === 'az' ? 'on' : ''}" data-sort="az">A–Z</button></div>`;
+}
+function bindChips(){
+  document.querySelectorAll('[data-sort]').forEach(b => b.onclick = () => { S.sort = b.dataset.sort; render(); });
+}
+
+// ---------- my list ----------
+function renderMine(){
+  $app.innerHTML = header() + `
+    <div class="card stack">
+      <h2>Adicionar filme</h2>
+      <input class="field" id="search" placeholder="Buscar filme no IMDb…" autocomplete="off" enterkeyhint="search">
+      <div class="status" id="searchStatus"></div>
+      <div class="list results" id="results"></div>
+    </div>
+    <div class="card">
+      <div class="row" style="justify-content:space-between;margin-bottom:10px">
+        <h2 style="margin:0">Já vi · <span class="count" style="font-size:15px;color:var(--text)">${S.mine.length}</span></h2>
+        ${sortChips()}
+      </div>
+      ${S.mine.length > 8 ? `<input class="field" id="filter" placeholder="Filtrar minha lista…" value="${esc(S.filter)}" style="margin-bottom:10px">` : ''}
+      <div class="list" id="mineList"></div>
+    </div>`;
+  bindHeader(); bindChips();
+  drawMineList();
+  const f = document.getElementById('filter');
+  if (f) f.oninput = () => { S.filter = f.value; drawMineList(); };
+  setupSearch();
+}
+
+function drawMineList(){
+  const el = document.getElementById('mineList');
+  const list = filtered(sorted(S.mine));
+  el.innerHTML = list.length ? list.map(m => `
+    <div class="movie">${posterHtml(m)}
+      <div class="info"><div class="name">${esc(m.t)}</div><div class="meta">${m.y || ''}${imdbLink(m)}</div></div>
+      <button class="btn danger small" data-del="${esc(m.k)}" title="Remover">✕</button>
+    </div>`).join('') : `<div class="empty">${S.mine.length ? 'Nada encontrado.' : 'Nenhum filme ainda. Busque acima e marque os que você já viu!'}</div>`;
+  el.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
+    const m = S.mine.find(x => x.k === b.dataset.del);
+    if (!m) return;
+    S.mine = S.mine.filter(x => x !== m);
+    scheduleSave(); drawMineList(); updateCount();
+    toast(`Removido: ${m.t}`);
+  });
+}
+function updateCount(){
+  const c = document.querySelector('#app .count'); if (c) c.textContent = S.mine.length;
+}
+
+function hasMine(movie){ return S.mine.some(m => sameMovie(m, movie)); }
+
+function addMine(movie){
+  if (hasMine(movie)) { toast('Já está na sua lista'); return false; }
+  S.mine.push({k: movie.k, t: movie.t, y: movie.y, p: movie.p, a: Date.now()});
+  scheduleSave();
+  toast(`✓ ${movie.t}`);
+  return true;
+}
+
+// Search uses IMDb's suggestion list (same as the imdb.com search box).
+// Direct from the browser first (no Worker cost); falls back to /api/imdb.
+const IMDB_TYPES = {movie: 'Filme', tvMovie: 'Filme de TV', short: 'Curta', video: 'Vídeo'};
+let imdbViaProxy = sessionStorage.getItem('javi:imdbProxy') === '1';
+
+function imdbUrl(q){
+  const clean = q.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+  const first = /[a-z0-9]/.test(clean[0]) ? clean[0] : 'x';
+  return `https://v2.sg.media-imdb.com/suggestion/${first}/${encodeURIComponent(clean)}.json`;
+}
+function imdbPoster(url){
+  // Ask IMDb's image server for a small 200px-wide version.
+  return url ? url.replace(/\._V1_.*\.jpg$|\.jpg$/, '._V1_QL75_UX200_.jpg') : undefined;
+}
+async function imdbFetch(q){
+  if (!imdbViaProxy) {
+    try {
+      const r = await fetch(imdbUrl(q));
+      if (r.ok) return (await r.json()).d || [];
+    } catch {}
+    imdbViaProxy = true;
+    try { sessionStorage.setItem('javi:imdbProxy', '1'); } catch {}
+  }
+  const r = await fetch('/api/imdb?q=' + encodeURIComponent(q));
+  return r.ok ? (await r.json()).d || [] : [];
+}
+async function searchImdb(q){
+  const d = await imdbFetch(q);
+  return d.filter(r => /^tt\d+$/.test(r.id) && IMDB_TYPES[r.qid]).map(r => ({
+    k: 'imdb:' + r.id,
+    t: r.l,
+    y: r.y,
+    p: imdbPoster(r.i && r.i.imageUrl),
+    s: r.s,
+    type: IMDB_TYPES[r.qid]
+  }));
+}
+
+let searchTimer, searchSeq = 0;
+function setupSearch(){
+  const input = document.getElementById('search');
+  const status = document.getElementById('searchStatus');
+  const results = document.getElementById('results');
+  const run = async () => {
+    const q = input.value.trim();
+    const seq = ++searchSeq;
+    if (q.length < 2) { results.innerHTML = ''; status.textContent = ''; return; }
+    status.textContent = 'Buscando no IMDb…';
+    let items = [], failed = false;
+    try { items = await searchImdb(q); } catch { failed = true; }
+    if (seq !== searchSeq) return;
+    const manual = {k: 't:' + norm(q), t: q};
+    status.textContent = failed ? 'IMDb indisponível agora.' : items.length ? '' : 'Nada encontrado no IMDb.';
+    results.innerHTML = items.map((m, i) => `
+      <div class="movie">${posterHtml(m)}
+        <div class="info"><div class="name">${esc(m.t)}</div>
+          <div class="meta">${[m.y, m.type !== 'Filme' ? m.type : ''].filter(Boolean).join(' · ')}${imdbLink(m)}</div>
+          ${m.s ? `<div class="meta">${esc(m.s)}</div>` : ''}</div>
+        ${hasMine(m) ? '<span class="badge">✓ Já vi</span>' : `<button class="btn small" data-add="${i}">Já vi</button>`}
+      </div>`).join('') + `
+      <div class="movie"><div class="poster">✍️</div>
+        <div class="info"><div class="name">Adicionar "${esc(q)}"</div><div class="meta">Não achou no IMDb? Adicione do jeito que digitou</div></div>
+        <button class="btn ghost small" data-add="manual">Já vi</button></div>`;
+    results.querySelectorAll('[data-add]').forEach(b => b.onclick = () => {
+      const m = b.dataset.add === 'manual' ? manual : items[Number(b.dataset.add)];
+      if (addMine(m)) {
+        b.outerHTML = '<span class="badge">✓ Já vi</span>';
+        drawMineList(); updateCount();
+      }
+    });
+  };
+  input.oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(run, 450); };
+  input.onkeydown = e => { if (e.key === 'Enter') { clearTimeout(searchTimer); run(); } };
+}
+
+// ---------- saving (batched) ----------
+let saveTimer;
+function scheduleSave(){
+  S.dirty = true; setSaveStatus();
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(save, 2000);
+}
+function setSaveStatus(){
+  const el = document.getElementById('saveStatus');
+  if (el) el.textContent = S.saving ? 'Salvando…' : S.dirty ? 'Alterações pendentes' : 'Salvo ✓';
+}
+async function save(keepalive = false){
+  if (!S.dirty || !S.me) return;
+  if (S.saving && !keepalive) { scheduleSave(); return; }
+  clearTimeout(saveTimer);
+  S.saving = true; S.dirty = false; setSaveStatus();
+  try {
+    const r = await api(`/g/${S.code}/m/${S.me.id}`, {method:'PUT', token: S.me.token, body:{name: S.me.name, movies: S.mine}, keepalive});
+    if (S.group.members[S.me.id]) S.group.members[S.me.id].c = r.count;
+    else S.group.members[S.me.id] = {n: r.name, c: r.count, u: Date.now()};
+    S.cache[S.me.id] = {movies: S.mine.slice(), at: Date.now()};
+  } catch (e) {
+    S.dirty = true;
+    toast(e.status === 401 ? 'Sem permissão para salvar.' : 'Erro ao salvar. Tentando de novo…');
+    if (e.status !== 401) saveTimer = setTimeout(save, 8000);
+  }
+  S.saving = false; setSaveStatus();
+}
+window.addEventListener('pagehide', () => save(true));
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState === 'hidden') return save(true);
+  // Refresh at most once a minute when coming back to the app.
+  if (S.me && Date.now() - S.groupAt > 60000) {
+    try { await loadGroup(); S.cache = {}; if (S.tab === 'people' && !S.view) render(); } catch {}
+  }
+});
+
+// ---------- people ----------
+function renderPeople(){
+  const members = Object.entries(S.group.members).sort((a, b) => b[1].c - a[1].c || a[1].n.localeCompare(b[1].n, 'pt-BR'));
+  $app.innerHTML = header(`<button class="icon-btn" id="refresh" title="Atualizar">↻</button>`) + `
+    <div class="card">
+      <h2>Pessoas no grupo · ${members.length}</h2>
+      <div class="list">${members.map(([id, m]) => `
+        <button class="person" data-person="${esc(id)}">
+          <div class="avatar" style="background:${colorFor(id)}">${esc((m.n[0] || '?').toUpperCase())}</div>
+          <div class="info"><div class="name">${esc(m.n)}${id === S.me.id ? ' <span class="sub">(você)</span>' : ''}</div>
+            <div class="sub">${m.c} filme${m.c === 1 ? '' : 's'}</div></div>
+          <span class="sub">›</span>
+        </button>`).join('')}</div>
+      ${members.length < 2 ? `<p class="sub" style="margin-top:12px">Compartilhe o link 🔗 para a galera entrar.</p>` : ''}
+    </div>`;
+  bindHeader();
+  document.getElementById('refresh').onclick = async () => {
+    try { await loadGroup(); S.cache = {}; renderPeople(); toast('Atualizado'); } catch { toast('Erro ao atualizar'); }
+  };
+  $app.querySelectorAll('[data-person]').forEach(b => b.onclick = () => {
+    if (b.dataset.person === S.me.id) return setTab('mine');
+    S.view = b.dataset.person; S.filter = ''; render(); window.scrollTo(0, 0);
+  });
+}
+
+async function renderPerson(id){
+  const meta = S.group.members[id] || {n: '?', c: 0};
+  $app.innerHTML = `
+    <div class="top"><div class="row">
+      <button class="icon-btn" id="back" title="Voltar">←</button>
+      <div class="avatar" style="background:${colorFor(id)}">${esc((meta.n[0] || '?').toUpperCase())}</div>
+      <div><div class="title">${esc(meta.n)}</div><div class="sub" id="personSub">${meta.c} filmes</div></div>
+    </div></div>
+    <div class="card"><div id="personBody"><div class="empty">Carregando…</div></div></div>`;
+  document.getElementById('back').onclick = () => { S.view = null; S.filter = ''; render(); };
+
+  let entry = S.cache[id];
+  if (!entry) {
+    try {
+      const r = await api(`/g/${S.code}/m/${id}`);
+      entry = S.cache[id] = {movies: r.movies, at: Date.now()};
+    } catch {
+      document.getElementById('personBody').innerHTML = `<div class="empty">Não foi possível carregar a lista.</div>`;
+      return;
+    }
+  }
+  if (S.view !== id) return;
+  const updateSub = () => {
+    const common = entry.movies.filter(hasMine).length;
+    document.getElementById('personSub').textContent =
+      `${entry.movies.length} filme${entry.movies.length === 1 ? '' : 's'} · ${common} em comum com você`;
+  };
+  updateSub();
+
+  const body = document.getElementById('personBody');
+  body.innerHTML = `
+    <div class="row" style="justify-content:space-between;margin-bottom:10px"><h2 style="margin:0">Já viu</h2>${sortChips()}</div>
+    ${entry.movies.length > 8 ? `<input class="field" id="filter" placeholder="Filtrar…" value="${esc(S.filter)}" style="margin-bottom:10px">` : ''}
+    <div class="list" id="personList"></div>`;
+  bindChips();
+  const draw = () => {
+    const list = filtered(sorted(entry.movies));
+    document.getElementById('personList').innerHTML = list.length ? list.map((m, i) => `
+      <div class="movie">${posterHtml(m)}
+        <div class="info"><div class="name">${esc(m.t)}</div><div class="meta">${m.y || ''}${imdbLink(m)}</div></div>
+        ${hasMine(m) ? '<span class="badge">✓ Eu também</span>' : `<button class="btn ghost small" data-also="${esc(m.k)}">+ Também vi</button>`}
+      </div>`).join('') : `<div class="empty">${entry.movies.length ? 'Nada encontrado.' : 'Ainda não marcou nenhum filme.'}</div>`;
+    document.querySelectorAll('[data-also]').forEach(b => b.onclick = () => {
+      const m = entry.movies.find(x => x.k === b.dataset.also);
+      if (m && addMine(m)) { b.outerHTML = '<span class="badge">✓ Eu também</span>'; updateSub(); }
+    });
+  };
+  draw();
+  const f = document.getElementById('filter');
+  if (f) f.oninput = () => { S.filter = f.value; draw(); };
+}
+
+// ---------- settings ----------
+function renderSettings(){
+  const personal = `${location.origin}/g/${S.code}#k=${S.me.id}.${S.me.token}`;
+  $app.innerHTML = `
+    <div class="top"><div class="row"><button class="icon-btn" id="back">←</button><div class="title">Ajustes</div></div></div>
+    <div class="card stack">
+      <h2>Seu nome</h2>
+      <div class="row"><input class="field" id="rename" maxlength="30" value="${esc(S.me.name)}">
+      <button class="btn ghost" id="saveName">Salvar</button></div>
+    </div>
+    <div class="card stack">
+      <h2>Link do grupo</h2>
+      <p class="sub">Quem tiver este link vê as listas e pode entrar no grupo.</p>
+      <input class="field" readonly value="${esc(location.origin + '/g/' + S.code)}" onclick="this.select()">
+      <button class="btn" id="shareG" style="width:100%">Compartilhar link do grupo</button>
+    </div>
+    <div class="card stack">
+      <h2>Seu link pessoal</h2>
+      <p class="sub">Abra este link em outro celular/computador para continuar com a <b>sua</b> lista. Não compartilhe — quem tiver ele pode editar sua lista.</p>
+      <button class="btn ghost" id="copyMe" style="width:100%">Copiar link pessoal</button>
+    </div>
+    <div class="card stack">
+      <h2>Sair</h2>
+      <button class="btn danger" id="leave" style="width:100%">Sair do grupo e apagar minha lista</button>
+      <a href="/" class="sub" style="display:block;text-align:center">Ir para o início (outros grupos)</a>
+    </div>`;
+  [...$tabs.children].forEach(b => b.classList.remove('on'));
+  document.getElementById('back').onclick = () => setTab('mine');
+  document.getElementById('shareG').onclick = shareGroup;
+  document.getElementById('copyMe').onclick = async () => {
+    try { await navigator.clipboard.writeText(personal); toast('Link pessoal copiado!'); } catch { prompt('Copie seu link pessoal:', personal); }
+  };
+  document.getElementById('saveName').onclick = async () => {
+    const n = document.getElementById('rename').value.trim();
+    if (!n || n === S.me.name) return;
+    S.me.name = n;
+    const store = loadStore(); store[S.code] = Object.assign(store[S.code] || {}, S.me); saveStore(store);
+    if (S.group.members[S.me.id]) S.group.members[S.me.id].n = n;
+    S.dirty = true; await save(); toast('Nome atualizado');
+  };
+  document.getElementById('leave').onclick = async () => {
+    if (!confirm('Tem certeza? Sua lista será apagada deste grupo.')) return;
+    try {
+      await api(`/g/${S.code}/m/${S.me.id}`, {method:'DELETE', token: S.me.token});
+      const store = loadStore(); delete store[S.code]; saveStore(store);
+      location.href = '/';
+    } catch { toast('Erro ao sair'); }
+  };
+}
+
+start();
+</script>
+</body>
+</html>

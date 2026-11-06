@@ -1,0 +1,24 @@
+{
+  "name": "ja-vi",
+
+  "compatibility_date": "2026-07-15",
+
+  "main": "src/index.js",
+
+  // Static files are served straight from the asset store (no Worker run).
+  // Only /api/* runs the Worker, keeping usage low.
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+
+  // Run `npx wrangler kv namespace create FILMES` and paste the id here.
+  // If the id is left out, recent Wrangler versions create the namespace on deploy.
+  "kv_namespaces": [
+    {
+      "binding": "FILMES"
+    }
+  ]
+}
