@@ -205,14 +205,39 @@ async function leaveGroup(request, env, code, id, index) {
 const TMDB = 'https://api.themoviedb.org/3';
 const CACHE_SECONDS = 12 * 60 * 60;
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// TMDB call with retry: TMDB answers 429 when too many requests come from the
+// same (shared) Cloudflare IP, and occasionally 5xx.
 async function tmdb(env, path, params = {}) {
   const url = new URL((env.TMDB_API || TMDB) + path);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  const res = await fetch(url, {
-    headers: { authorization: 'Bearer ' + env.TMDB_TOKEN, accept: 'application/json' }
-  });
-  if (!res.ok) throw new Error('tmdb_' + res.status);
-  return res.json();
+  for (let attempt = 0; ; attempt++) {
+    // Budget per incoming request: the free plan allows 50 subrequests.
+    if (env.budget && env.budget.left-- <= 0) throw new Error('tmdb_budget');
+    const res = await fetch(url, {
+      headers: { authorization: 'Bearer ' + env.TMDB_TOKEN, accept: 'application/json' }
+    });
+    if (res.ok) return res.json();
+    const retryable = res.status === 429 || res.status >= 500;
+    const canRetry = !env.budget || env.budget.left > 8;
+    if (!retryable || attempt >= 2 || !canRetry) throw new Error('tmdb_' + res.status);
+    const wait = Math.min(Number(res.headers.get('retry-after')) * 1000 || 400 * (attempt + 1), 2000);
+    await sleep(wait);
+  }
+}
+
+// Run fn over items with at most `limit` running at the same time.
+async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i], i);
+    }
+  }));
+  return out;
 }
 
 // Platforms where the movie is included in the subscription, per country.
@@ -231,8 +256,14 @@ async function platformsOf(env, id, regions) {
     }
     return out;
   } catch {
-    return [];
+    return null; // unknown (TMDB failed) - not the same as "on no platform"
   }
+}
+
+// Platforms for many movies, a few at a time. `failed` = lookups that errored.
+async function platformsOfAll(env, movies, regions) {
+  const pls = await mapLimit(movies, 4, m => platformsOf(env, m.id, regions));
+  return { pls: pls.map(p => p || []), failed: pls.filter(p => p === null).length };
 }
 
 function toMovie(r) {
@@ -250,13 +281,15 @@ async function cached(request, compute) {
   const hit = await cache.match(key);
   if (hit) return hit;
   const data = await compute();
+  // If some platform lookups failed, the answer is incomplete: don't cache it.
+  const complete = !data.failed;
   const response = new Response(JSON.stringify({ ok: true, ...data }), {
     headers: {
       'content-type': 'application/json; charset=utf-8',
-      'cache-control': `public, max-age=${CACHE_SECONDS}`
+      'cache-control': complete ? `public, max-age=${CACHE_SECONDS}` : 'no-store'
     }
   });
-  await cache.put(key, response.clone());
+  if (complete) await cache.put(key, response.clone());
   return response;
 }
 
@@ -273,11 +306,11 @@ async function searchMovies(request, env, url) {
     const data = await tmdb(env, '/search/movie', {
       query: q, language: 'pt-BR', include_adult: 'false', page: '1'
     });
-    const top = (data.results || []).slice(0, 15).map(toMovie);
-    const pls = await Promise.all(top.map(m => platformsOf(env, m.id, regions)));
+    const top = (data.results || []).slice(0, 12).map(toMovie);
+    const { pls, failed } = await platformsOfAll(env, top, regions);
     const results = [], others = [];
     top.forEach((m, i) => (pls[i].length ? results.push({ ...m, pl: pls[i] }) : others.push(m)));
-    return { results, others };
+    return { results, others, failed };
   });
 }
 
@@ -293,7 +326,7 @@ async function catalog(request, env, url) {
   const page = Math.min(Math.max(parseInt(url.searchParams.get('page'), 10) || 1, 1), 50);
   const targets = region === 'ALL' ? regions : [region];
   // Stay well under the 50 subrequests per request limit of the free plan.
-  const perRegion = Math.floor(36 / targets.length);
+  const perRegion = Math.floor(20 / targets.length);
 
   return cached(request, async () => {
     const pages = await Promise.all(targets.map(r => tmdb(env, '/discover/movie', {
@@ -316,13 +349,13 @@ async function catalog(request, env, url) {
       }
     }
 
-    const pls = await Promise.all(movies.map(m => platformsOf(env, m.id, regions)));
+    const { pls, failed } = await platformsOfAll(env, movies, regions);
     const results = movies
       .map((m, i) => ({ ...m, pl: pls[i] }))
       .filter(m => m.pl.some(x => (platform === 'all' || x.startsWith(platform + '-')) &&
                                   (region === 'ALL' || x.endsWith('-' + region))));
     const more = pages.some(p => page < Math.min(p.total_pages || 0, 50));
-    return { results, page, more };
+    return { results, page, more, failed };
   });
 }
 
@@ -338,6 +371,7 @@ export default {
 
     try {
       if (parts.length === 2 && method === 'GET') {
+        env = { ...env, budget: { left: 45 } };
         if (parts[1] === 'search') return await searchMovies(request, env, url);
         if (parts[1] === 'catalog') return await catalog(request, env, url);
       }

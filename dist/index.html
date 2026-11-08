@@ -510,7 +510,7 @@ function setupSearch(){
     status.textContent = page === 1 ? 'Carregando catálogo…' : '';
     more.innerHTML = page > 1 ? '<div class="empty">Carregando…</div>' : '';
     let d;
-    try { d = await getJson(`/api/catalog?platform=${S.platform}&region=${S.region}&page=${page}`); }
+    try { d = await getJson(`/api/catalog?v=2&platform=${S.platform}&region=${S.region}&page=${page}`); }
     catch (e) {
       if (seq !== searchSeq) return;
       status.textContent = e.message === 'tmdb_not_configured' ? 'Catálogo não configurado (falta o TMDB_TOKEN).' : 'Catálogo indisponível agora.';
@@ -520,7 +520,8 @@ function setupSearch(){
     const fresh = d.results.filter(m => !items.some(x => x.k === m.k));
     const startIdx = items.length;
     items = items.concat(fresh);
-    status.textContent = page === 1 ? `Populares ${whereText()}` : '';
+    status.textContent = d.failed ? 'Algumas plataformas não carregaram. Tente de novo em alguns segundos.'
+      : page === 1 ? `Populares ${whereText()}` : '';
     results.insertAdjacentHTML('beforeend', fresh.map((m, i) => resultRow(m, startIdx + i)).join(''));
     bindAdds();
     more.innerHTML = d.more ? '<button class="btn ghost" id="moreBtn" style="width:100%;margin-top:8px">Carregar mais</button>' : '';
@@ -534,7 +535,7 @@ function setupSearch(){
     if (q.length < 2) return loadCatalog(1, seq);
     status.textContent = 'Buscando…';
     let d;
-    try { d = await getJson('/api/search?q=' + encodeURIComponent(q)); }
+    try { d = await getJson('/api/search?v=2&q=' + encodeURIComponent(q)); }
     catch (e) {
       if (seq !== searchSeq) return;
       status.textContent = e.message === 'tmdb_not_configured' ? 'Busca não configurada (falta o TMDB_TOKEN).' : 'Busca indisponível agora.';
@@ -545,7 +546,8 @@ function setupSearch(){
     const others = d.results.filter(m => !onPlatform.includes(m)).concat(d.others);
     items = onPlatform.concat(others);
     const where = whereText();
-    status.textContent = onPlatform.length ? '' : `Nenhum resultado disponível ${where}.`;
+    status.textContent = d.failed ? 'Não deu para confirmar as plataformas de alguns filmes. Busque de novo em alguns segundos.'
+      : onPlatform.length ? '' : `Nenhum resultado disponível ${where}.`;
     results.innerHTML = onPlatform.map(resultRow).join('') +
       (others.length ? `<div class="subhead">Não está ${where} agora</div>` +
         others.map((m, i) => resultRow(m, onPlatform.length + i)).join('') : '');
