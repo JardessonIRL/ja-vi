@@ -80,6 +80,16 @@ h2{font-size:15px;margin:0 0 10px;color:var(--muted);font-weight:700;text-transf
 .chip{background:var(--card2);border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:13px;cursor:pointer;color:var(--muted)}
 .chip.on{color:var(--text);border-color:var(--accent)}
 .hidden{display:none!important}
+.pls{display:inline-flex;gap:4px;flex-wrap:wrap;vertical-align:middle;margin-top:4px}
+.pl{font-size:11px;font-weight:800;border-radius:6px;padding:2px 7px;color:#fff;white-space:nowrap;letter-spacing:.01em}
+.pl.netflix{background:#e50914}
+.pl.disney{background:#113ccf}
+.pl.prime{background:#00a8e1;color:#04121c}
+.chip.netflix.on{border-color:#e50914}
+.chip.disney.on{border-color:#3b6cff}
+.chip.prime.on{border-color:#00a8e1}
+.subhead{font-size:12px;color:var(--muted);font-weight:700;margin:14px 0 6px;text-transform:uppercase;letter-spacing:.04em}
+.credit{font-size:11px;color:var(--muted);text-align:center;margin-top:8px}
 a{color:var(--accent)}
 </style>
 </head>
@@ -133,13 +143,24 @@ function sameMovie(a, b){
   return !a.y || !b.y || a.y === b.y;
 }
 
+const PLATFORMS = {netflix: 'Netflix', disney: 'Disney+', prime: 'Prime Video'};
+
+// Where-to-watch link: TMDB page (JustWatch data) for new movies, IMDb for old ones.
 function imdbLink(m){
+  const tm = /^tmdb:(\d+)$/.exec(m.k || '');
+  if (tm) return ` · <a href="https://www.themoviedb.org/movie/${tm[1]}/watch?locale=BR" target="_blank" rel="noopener">Onde assistir ↗</a>`;
   const id = /^imdb:(tt\d+)$/.exec(m.k || '');
   return id ? ` · <a href="https://www.imdb.com/title/${id[1]}/" target="_blank" rel="noopener">IMDb ↗</a>` : '';
 }
 
+// Badges with the platforms where the movie is available.
+function plHtml(m){
+  const pl = (m.pl || []).filter(x => PLATFORMS[x]);
+  return pl.length ? `<div class="pls">${pl.map(x => `<span class="pl ${x}">${PLATFORMS[x]}</span>`).join('')}</div>` : '';
+}
+
 function posterHtml(m){
-  return m.p ? `<img class="poster" src="${esc(m.p)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<div class="poster">🎞️</div>`;
+  return m.p ? `<img class="poster" src="${esc(m.p)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.removeAttribute('src');this.alt=''">` : `<div class="poster">🎞️</div>`;
 }
 
 // ---------------- state ----------------
@@ -351,9 +372,17 @@ function renderMine(){
   $app.innerHTML = header() + `
     <div class="card stack">
       <h2>Adicionar filme</h2>
-      <input class="field" id="search" placeholder="Buscar filme no IMDb…" autocomplete="off" enterkeyhint="search">
+      <div class="chips" id="platformChips">
+        <button class="chip" data-platform="all">Todas</button>
+        <button class="chip netflix" data-platform="netflix">Netflix</button>
+        <button class="chip disney" data-platform="disney">Disney+</button>
+        <button class="chip prime" data-platform="prime">Prime Video</button>
+      </div>
+      <input class="field" id="search" placeholder="Buscar filme…" autocomplete="off" enterkeyhint="search">
       <div class="status" id="searchStatus"></div>
       <div class="list results" id="results"></div>
+      <div id="more"></div>
+      <div class="credit">Filmes: TMDB · Disponibilidade no Brasil: JustWatch</div>
     </div>
     <div class="card">
       <div class="row" style="justify-content:space-between;margin-bottom:10px">
@@ -375,7 +404,7 @@ function drawMineList(){
   const list = filtered(sorted(S.mine));
   el.innerHTML = list.length ? list.map(m => `
     <div class="movie">${posterHtml(m)}
-      <div class="info"><div class="name">${esc(m.t)}</div><div class="meta">${m.y || ''}${imdbLink(m)}</div></div>
+      <div class="info"><div class="name">${esc(m.t)}</div><div class="meta">${m.y || ''}${imdbLink(m)}</div>${plHtml(m)}</div>
       <button class="btn danger small" data-del="${esc(m.k)}" title="Remover">✕</button>
     </div>`).join('') : `<div class="empty">${S.mine.length ? 'Nada encontrado.' : 'Nenhum filme ainda. Busque acima e marque os que você já viu!'}</div>`;
   el.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
@@ -394,48 +423,28 @@ function hasMine(movie){ return S.mine.some(m => sameMovie(m, movie)); }
 
 function addMine(movie){
   if (hasMine(movie)) { toast('Já está na sua lista'); return false; }
-  S.mine.push({k: movie.k, t: movie.t, y: movie.y, p: movie.p, a: Date.now()});
+  S.mine.push({k: movie.k, t: movie.t, y: movie.y, p: movie.p, pl: movie.pl, a: Date.now()});
   scheduleSave();
   toast(`✓ ${movie.t}`);
   return true;
 }
 
-// Search uses IMDb's suggestion list (same as the imdb.com search box).
-// Direct from the browser first (no Worker cost); falls back to /api/imdb.
-const IMDB_TYPES = {movie: 'Filme', tvMovie: 'Filme de TV', short: 'Curta', video: 'Vídeo'};
-let imdbViaProxy = sessionStorage.getItem('javi:imdbProxy') === '1';
+// Movie base: Netflix, Disney+ and Prime Video catalogs (via the Worker,
+// TMDB + JustWatch data). Responses are cached by the browser and the edge.
+S.platform = 'all';
+async function getJson(url){
+  const r = await fetch(url);
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || !d.ok) throw new Error(d.error || 'error');
+  return d;
+}
 
-function imdbUrl(q){
-  const clean = q.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
-  const first = /[a-z0-9]/.test(clean[0]) ? clean[0] : 'x';
-  return `https://v2.sg.media-imdb.com/suggestion/${first}/${encodeURIComponent(clean)}.json`;
-}
-function imdbPoster(url){
-  // Ask IMDb's image server for a small 200px-wide version.
-  return url ? url.replace(/\._V1_.*\.jpg$|\.jpg$/, '._V1_QL75_UX200_.jpg') : undefined;
-}
-async function imdbFetch(q){
-  if (!imdbViaProxy) {
-    try {
-      const r = await fetch(imdbUrl(q));
-      if (r.ok) return (await r.json()).d || [];
-    } catch {}
-    imdbViaProxy = true;
-    try { sessionStorage.setItem('javi:imdbProxy', '1'); } catch {}
-  }
-  const r = await fetch('/api/imdb?q=' + encodeURIComponent(q));
-  return r.ok ? (await r.json()).d || [] : [];
-}
-async function searchImdb(q){
-  const d = await imdbFetch(q);
-  return d.filter(r => /^tt\d+$/.test(r.id) && IMDB_TYPES[r.qid]).map(r => ({
-    k: 'imdb:' + r.id,
-    t: r.l,
-    y: r.y,
-    p: imdbPoster(r.i && r.i.imageUrl),
-    s: r.s,
-    type: IMDB_TYPES[r.qid]
-  }));
+function resultRow(m, i){
+  return `<div class="movie">${posterHtml(m)}
+    <div class="info"><div class="name">${esc(m.t)}</div>
+      <div class="meta">${m.y || ''}${m.o ? ' · ' + esc(m.o) : ''}</div>${plHtml(m)}</div>
+    ${hasMine(m) ? '<span class="badge">✓ Já vi</span>' : `<button class="btn small" data-add="${i}">Já vi</button>`}
+  </div>`;
 }
 
 let searchTimer, searchSeq = 0;
@@ -443,36 +452,77 @@ function setupSearch(){
   const input = document.getElementById('search');
   const status = document.getElementById('searchStatus');
   const results = document.getElementById('results');
+  const more = document.getElementById('more');
+  const chips = document.getElementById('platformChips');
+  let items = [];
+
+  const bindAdds = () => results.querySelectorAll('[data-add]').forEach(b => b.onclick = () => {
+    const m = items[Number(b.dataset.add)];
+    if (m && addMine(m)) {
+      b.outerHTML = '<span class="badge">✓ Já vi</span>';
+      drawMineList(); updateCount();
+    }
+  });
+
+  const paintChips = () => chips.querySelectorAll('[data-platform]').forEach(c =>
+    c.classList.toggle('on', c.dataset.platform === S.platform));
+
+  // Empty search: popular movies of the chosen platform.
+  const loadCatalog = async (page, seq) => {
+    status.textContent = page === 1 ? 'Carregando catálogo…' : '';
+    more.innerHTML = page > 1 ? '<div class="empty">Carregando…</div>' : '';
+    let d;
+    try { d = await getJson(`/api/catalog?platform=${S.platform}&page=${page}`); }
+    catch (e) {
+      if (seq !== searchSeq) return;
+      status.textContent = e.message === 'tmdb_not_configured' ? 'Catálogo não configurado (falta o TMDB_TOKEN).' : 'Catálogo indisponível agora.';
+      more.innerHTML = ''; return;
+    }
+    if (seq !== searchSeq) return;
+    const fresh = d.results.filter(m => !items.some(x => x.k === m.k));
+    const startIdx = items.length;
+    items = items.concat(fresh);
+    status.textContent = page === 1 ? `Populares ${S.platform === 'all' ? 'nas plataformas' : 'na ' + PLATFORMS[S.platform]}` : '';
+    results.insertAdjacentHTML('beforeend', fresh.map((m, i) => resultRow(m, startIdx + i)).join(''));
+    bindAdds();
+    more.innerHTML = d.more ? '<button class="btn ghost" id="moreBtn" style="width:100%;margin-top:8px">Carregar mais</button>' : '';
+    if (d.more) document.getElementById('moreBtn').onclick = () => loadCatalog(page + 1, seq);
+  };
+
   const run = async () => {
     const q = input.value.trim();
     const seq = ++searchSeq;
-    if (q.length < 2) { results.innerHTML = ''; status.textContent = ''; return; }
-    status.textContent = 'Buscando no IMDb…';
-    let items = [], failed = false;
-    try { items = await searchImdb(q); } catch { failed = true; }
+    items = []; results.innerHTML = ''; more.innerHTML = '';
+    if (q.length < 2) return loadCatalog(1, seq);
+    status.textContent = 'Buscando…';
+    let d;
+    try { d = await getJson('/api/search?q=' + encodeURIComponent(q)); }
+    catch (e) {
+      if (seq !== searchSeq) return;
+      status.textContent = e.message === 'tmdb_not_configured' ? 'Busca não configurada (falta o TMDB_TOKEN).' : 'Busca indisponível agora.';
+      return;
+    }
     if (seq !== searchSeq) return;
-    const manual = {k: 't:' + norm(q), t: q};
-    status.textContent = failed ? 'IMDb indisponível agora.' : items.length ? '' : 'Nada encontrado no IMDb.';
-    results.innerHTML = items.map((m, i) => `
-      <div class="movie">${posterHtml(m)}
-        <div class="info"><div class="name">${esc(m.t)}</div>
-          <div class="meta">${[m.y, m.type !== 'Filme' ? m.type : ''].filter(Boolean).join(' · ')}${imdbLink(m)}</div>
-          ${m.s ? `<div class="meta">${esc(m.s)}</div>` : ''}</div>
-        ${hasMine(m) ? '<span class="badge">✓ Já vi</span>' : `<button class="btn small" data-add="${i}">Já vi</button>`}
-      </div>`).join('') + `
-      <div class="movie"><div class="poster">✍️</div>
-        <div class="info"><div class="name">Adicionar "${esc(q)}"</div><div class="meta">Não achou no IMDb? Adicione do jeito que digitou</div></div>
-        <button class="btn ghost small" data-add="manual">Já vi</button></div>`;
-    results.querySelectorAll('[data-add]').forEach(b => b.onclick = () => {
-      const m = b.dataset.add === 'manual' ? manual : items[Number(b.dataset.add)];
-      if (addMine(m)) {
-        b.outerHTML = '<span class="badge">✓ Já vi</span>';
-        drawMineList(); updateCount();
-      }
-    });
+    const onPlatform = d.results.filter(m => S.platform === 'all' || m.pl.includes(S.platform));
+    const others = d.results.filter(m => !onPlatform.includes(m)).concat(d.others);
+    items = onPlatform.concat(others);
+    const where = S.platform === 'all' ? 'nas plataformas' : 'na ' + PLATFORMS[S.platform];
+    status.textContent = onPlatform.length ? '' : `Nenhum resultado disponível ${where}.`;
+    results.innerHTML = onPlatform.map(resultRow).join('') +
+      (others.length ? `<div class="subhead">Não ${S.platform === 'all' ? 'está nas plataformas' : 'está ' + where} agora</div>` +
+        others.map((m, i) => resultRow(m, onPlatform.length + i)).join('') : '');
+    bindAdds();
   };
-  input.oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(run, 450); };
+
+  chips.onclick = e => {
+    const c = e.target.closest('[data-platform]');
+    if (!c || c.dataset.platform === S.platform) return;
+    S.platform = c.dataset.platform; paintChips(); run();
+  };
+  paintChips();
+  input.oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(run, 500); };
   input.onkeydown = e => { if (e.key === 'Enter') { clearTimeout(searchTimer); run(); } };
+  run();
 }
 
 // ---------- saving (batched) ----------
@@ -576,7 +626,7 @@ async function renderPerson(id){
     const list = filtered(sorted(entry.movies));
     document.getElementById('personList').innerHTML = list.length ? list.map((m, i) => `
       <div class="movie">${posterHtml(m)}
-        <div class="info"><div class="name">${esc(m.t)}</div><div class="meta">${m.y || ''}${imdbLink(m)}</div></div>
+        <div class="info"><div class="name">${esc(m.t)}</div><div class="meta">${m.y || ''}${imdbLink(m)}</div>${plHtml(m)}</div>
         ${hasMine(m) ? '<span class="badge">✓ Eu também</span>' : `<button class="btn ghost small" data-also="${esc(m.k)}">+ Também vi</button>`}
       </div>`).join('') : `<div class="empty">${entry.movies.length ? 'Nada encontrado.' : 'Ainda não marcou nenhum filme.'}</div>`;
     document.querySelectorAll('[data-also]').forEach(b => b.onclick = () => {

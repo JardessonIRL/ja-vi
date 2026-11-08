@@ -4,8 +4,23 @@ App para um grupo marcar os filmes que já assistiu e ver a lista de cada pessoa
 
 - Quem cria o grupo recebe um link (`/g/CODIGO`). Quem tiver o link entra, informa o nome no primeiro acesso e marca os filmes.
 - Na aba **Pessoas**, ao clicar no nome de alguém, você vê os filmes dessa pessoa, quantos vocês têm em comum e pode marcar com **+ Também vi**.
-- A busca usa o lista do **IMDb** (mesmo endpoint de sugestões da caixa de busca do imdb.com), com poster, ano, elenco e link para a página do filme. Também dá para adicionar o título digitado à mão.
+- A base de filmes vem das plataformas **Netflix**, **Disney+** e **Prime Video** (catálogo do Brasil). Dá para navegar pelos populares de cada plataforma ou buscar pelo nome.
+- Cada filme mostra, na frente do título, em qual plataforma está disponível. Isso também aparece na sua lista e na lista das outras pessoas.
+- Filmes que não estão em nenhuma das três aparecem separados, em "Não está nas plataformas agora", e também podem ser marcados.
 - Em **Ajustes** (⚙️) tem o *link pessoal*, que serve para usar a mesma lista em outro aparelho.
+
+## Base de filmes (TMDB + JustWatch)
+
+Netflix, Disney+ e Prime Video não têm API pública. Os catálogos e a disponibilidade vêm do **TMDB** (gratuito), que usa os dados do **JustWatch** para dizer onde cada filme está no Brasil.
+
+1. Crie uma conta em https://www.themoviedb.org/signup
+2. Em https://www.themoviedb.org/settings/api, peça uma chave de API (uso pessoal) e copie o **API Read Access Token** (o token longo).
+3. No Cloudflare: Workers & Pages → `ja-vi` → Settings → Variables and Secrets → Add → tipo **Secret**, nome `TMDB_TOKEN`, valor = o token.
+   (ou pela linha de comando: `npx wrangler secret put TMDB_TOKEN`)
+
+A região fica em `REGION` no `wrangler.jsonc` (padrão `BR`).
+
+A disponibilidade é salva no momento em que o filme é marcado. Se o filme sair da plataforma depois, a etiqueta antiga continua aparecendo.
 
 ## Deploy (Cloudflare Workers + KV)
 
@@ -29,7 +44,7 @@ Para rodar local: `npx wrangler dev`.
 - Os arquivos estáticos são servidos pelo Assets e **não executam o Worker**. Só `/api/*` executa (`run_worker_first`).
 - Não tem polling. Os dados só são atualizados ao abrir o app, ao voltar para ele (no máximo 1x por minuto) ou no botão ↻.
 - As edições são agrupadas: marcar vários filmes seguidos gera **um** salvamento (2 s de espera).
-- A busca de filmes sai do navegador direto para o IMDb, sem passar pelo Worker. Se o navegador bloquear, cai para `/api/imdb`, que usa cache de 1 dia na borda.
+- Buscas e páginas de catálogo ficam em cache por 12 h (no navegador e na borda da Cloudflare). A mesma busca feita por várias pessoas só consulta o TMDB uma vez.
 
 ## KV
 

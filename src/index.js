@@ -26,6 +26,19 @@ const MAX_MEMBERS = 60;
 const MAX_MOVIES = 3000;
 const MAX_BODY = 400_000;
 
+// Streaming platforms (TMDB provider ids, data from JustWatch).
+// Some platforms have more than one id (e.g. plans with ads).
+const PLATFORMS = {
+  netflix: [8, 1796],
+  disney: [337],
+  prime: [119, 9, 2100]
+};
+const PLATFORM_IDS = Object.keys(PLATFORMS);
+const PROVIDER_TO_PLATFORM = Object.fromEntries(
+  Object.entries(PLATFORMS).flatMap(([name, ids]) => ids.map(id => [id, name]))
+);
+const ALL_PROVIDERS = Object.keys(PROVIDER_TO_PLATFORM).join('|');
+
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), {
     status,
@@ -66,6 +79,10 @@ function cleanMovies(list) {
     if (Number.isInteger(y) && y > 1870 && y < 2200) movie.y = y;
     const p = cleanText(m.p, 300);
     if (p.startsWith('https://')) movie.p = p;
+    if (Array.isArray(m.pl)) {
+      const pl = [...new Set(m.pl.filter(x => PLATFORM_IDS.includes(x)))];
+      if (pl.length) movie.pl = pl;
+    }
     const a = Number(m.a);
     movie.a = Number.isFinite(a) && a > 0 ? Math.floor(a) : Date.now();
     out.push(movie);
@@ -172,37 +189,116 @@ async function leaveGroup(request, env, code, id, index) {
   return json({ ok: true });
 }
 
-// ---------- IMDb search (fallback proxy) ----------
-// The browser calls IMDb's suggestion endpoint directly. This proxy is only
-// used if that is blocked, and answers are cached at the edge for a day.
+// ---------- movie catalog (TMDB + JustWatch) ----------
+// Search and platform catalogs come from TMDB. Availability ("where to
+// watch") is TMDB's JustWatch data for the region in env.REGION (BR).
+// Every answer is cached at the edge for 12h, so repeated searches and
+// catalog pages don't call TMDB (or count much) again.
 
-export function imdbUrl(q) {
-  const clean = q.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-  const first = /[a-z0-9]/.test(clean[0]) ? clean[0] : 'x';
-  return `https://v2.sg.media-imdb.com/suggestion/${first}/${encodeURIComponent(clean)}.json`;
+const TMDB = 'https://api.themoviedb.org/3';
+const CACHE_SECONDS = 12 * 60 * 60;
+
+async function tmdb(env, path, params = {}) {
+  const url = new URL((env.TMDB_API || TMDB) + path);
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+  const res = await fetch(url, {
+    headers: { authorization: 'Bearer ' + env.TMDB_TOKEN, accept: 'application/json' }
+  });
+  if (!res.ok) throw new Error('tmdb_' + res.status);
+  return res.json();
 }
 
-async function imdbSearch(request, url) {
-  const q = cleanText(url.searchParams.get('q'), 80);
-  if (q.length < 2) return json({ ok: true, d: [] });
+// Platforms where the movie is included in the subscription in the region.
+async function platformsOf(env, id, region) {
+  try {
+    const data = await tmdb(env, `/movie/${id}/watch/providers`);
+    const r = (data.results || {})[region] || {};
+    const offers = [...(r.flatrate || []), ...(r.ads || [])];
+    const found = new Set();
+    for (const o of offers) {
+      const name = PROVIDER_TO_PLATFORM[o.provider_id];
+      if (name) found.add(name);
+    }
+    return PLATFORM_IDS.filter(n => found.has(n));
+  } catch {
+    return [];
+  }
+}
 
-  const cacheKey = new Request(`https://imdb-cache.local/${encodeURIComponent(q.toLowerCase())}`);
+function toMovie(r) {
+  const year = Number((r.release_date || '').slice(0, 4));
+  const movie = { k: 'tmdb:' + r.id, id: r.id, t: r.title || r.original_title };
+  if (year) movie.y = year;
+  if (r.poster_path) movie.p = 'https://image.tmdb.org/t/p/w185' + r.poster_path;
+  if (r.original_title && r.original_title !== movie.t) movie.o = r.original_title;
+  return movie;
+}
+
+async function cached(request, compute) {
   const cache = caches.default;
-  const hit = await cache.match(cacheKey);
+  const key = new Request(new URL(request.url).toString(), { method: 'GET' });
+  const hit = await cache.match(key);
   if (hit) return hit;
-
-  const res = await fetch(imdbUrl(q), { headers: { 'user-agent': 'Mozilla/5.0', accept: 'application/json' } });
-  if (!res.ok) return fail('imdb_unavailable', 502);
-  const data = await res.json();
-
-  const response = new Response(JSON.stringify({ ok: true, d: data.d || [] }), {
+  const data = await compute();
+  const response = new Response(JSON.stringify({ ok: true, ...data }), {
     headers: {
       'content-type': 'application/json; charset=utf-8',
-      'cache-control': 'public, max-age=86400'
+      'cache-control': `public, max-age=${CACHE_SECONDS}`
     }
   });
-  await cache.put(cacheKey, response.clone());
+  await cache.put(key, response.clone());
   return response;
+}
+
+// GET /api/search?q=matrix
+//   results: on Netflix / Disney+ / Prime (with "pl")
+//   others:  found, but not on those platforms right now
+async function searchMovies(request, env, url) {
+  if (!env.TMDB_TOKEN) return fail('tmdb_not_configured', 503);
+  const q = cleanText(url.searchParams.get('q'), 80);
+  if (q.length < 2) return json({ ok: true, results: [], others: [] });
+  const region = env.REGION || 'BR';
+
+  return cached(request, async () => {
+    const data = await tmdb(env, '/search/movie', {
+      query: q, language: 'pt-BR', region, include_adult: 'false', page: '1'
+    });
+    const top = (data.results || []).slice(0, 15).map(toMovie);
+    const pls = await Promise.all(top.map(m => platformsOf(env, m.id, region)));
+    const results = [], others = [];
+    top.forEach((m, i) => (pls[i].length ? results.push({ ...m, pl: pls[i] }) : others.push(m)));
+    return { results, others };
+  });
+}
+
+// GET /api/catalog?platform=netflix&page=1  -> popular movies on that platform
+async function catalog(request, env, url) {
+  if (!env.TMDB_TOKEN) return fail('tmdb_not_configured', 503);
+  const platform = url.searchParams.get('platform') || 'all';
+  if (platform !== 'all' && !PLATFORMS[platform]) return fail('bad_platform');
+  const page = Math.min(Math.max(parseInt(url.searchParams.get('page'), 10) || 1, 1), 50);
+  const region = env.REGION || 'BR';
+
+  return cached(request, async () => {
+    const data = await tmdb(env, '/discover/movie', {
+      language: 'pt-BR',
+      watch_region: region,
+      with_watch_providers: platform === 'all' ? ALL_PROVIDERS : PLATFORMS[platform].join('|'),
+      with_watch_monetization_types: 'flatrate|ads',
+      sort_by: 'popularity.desc',
+      include_adult: 'false',
+      page: String(page)
+    });
+    const movies = (data.results || []).map(toMovie);
+    const pls = await Promise.all(movies.map(m => platformsOf(env, m.id, region)));
+    const results = movies
+      .map((m, i) => ({
+        ...m,
+        pl: platform === 'all' ? pls[i] : PLATFORM_IDS.filter(n => n === platform || pls[i].includes(n))
+      }))
+      .filter(m => m.pl.length);
+    return { results, page, more: page < Math.min(data.total_pages || 1, 50) };
+  });
 }
 
 // ---------- router ----------
@@ -216,8 +312,9 @@ export default {
     if (parts[0] !== 'api') return env.ASSETS.fetch(request);
 
     try {
-      if (parts.length === 2 && parts[1] === 'imdb' && method === 'GET') {
-        return await imdbSearch(request, url);
+      if (parts.length === 2 && method === 'GET') {
+        if (parts[1] === 'search') return await searchMovies(request, env, url);
+        if (parts[1] === 'catalog') return await catalog(request, env, url);
       }
 
       if (parts.length === 2 && parts[1] === 'g' && method === 'POST') {
