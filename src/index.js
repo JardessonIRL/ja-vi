@@ -31,7 +31,9 @@ const MAX_BODY = 400_000;
 const PLATFORMS = {
   netflix: [8, 1796],
   disney: [337],
-  prime: [119, 9, 2100]
+  prime: [119, 9, 2100],
+  globoplay: [307],
+  appletv: [350]
 };
 const PLATFORM_IDS = Object.keys(PLATFORMS);
 const PROVIDER_TO_PLATFORM = Object.fromEntries(
@@ -39,7 +41,7 @@ const PROVIDER_TO_PLATFORM = Object.fromEntries(
 );
 const ALL_PROVIDERS = Object.keys(PROVIDER_TO_PLATFORM).join('|');
 // Saved as "<platform>-<country>", e.g. "netflix-BR". Old entries have no country (= BR).
-const PL_RE = /^(netflix|disney|prime)(-[A-Z]{2})?$/;
+const PL_RE = new RegExp(`^(${Object.keys(PLATFORMS).join('|')})(-[A-Z]{2})?$`);
 
 function regionsOf(env) {
   const list = String(env.REGIONS || 'BR,IE').split(',').map(r => r.trim().toUpperCase()).filter(r => /^[A-Z]{2}$/.test(r));

@@ -4,14 +4,14 @@ App para um grupo marcar os filmes que já assistiu e ver a lista de cada pessoa
 
 - Quem cria o grupo recebe um link (`/g/CODIGO`). Quem tiver o link entra, informa o nome no primeiro acesso e marca os filmes.
 - Na aba **Pessoas**, ao clicar no nome de alguém, você vê os filmes dessa pessoa, quantos vocês têm em comum e pode marcar com **+ Também vi**.
-- A base de filmes vem das plataformas **Netflix**, **Disney+** e **Prime Video** (catálogos do **Brasil** e da **Irlanda**). Dá para navegar pelos populares de cada plataforma ou buscar pelo nome.
+- A base de filmes vem das plataformas **Netflix**, **Disney+**, **Prime Video**, **Globoplay** e **Apple TV** (catálogos do **Brasil** e da **Irlanda**). Dá para navegar pelos populares de cada plataforma ou buscar pelo nome.
 - Cada filme mostra, na frente do título, em qual plataforma e em qual país está disponível (ex.: `Netflix BR IE`, `Prime Video IE`). Dá para filtrar por país: Brasil, Irlanda ou os dois. Isso também aparece na sua lista e na lista das outras pessoas.
-- Filmes que não estão em nenhuma das três aparecem separados, em "Não está nas plataformas agora", e também podem ser marcados.
+- Filmes que não estão em nenhuma delas aparecem separados, em "Não está nas plataformas agora", e também podem ser marcados.
 - Em **Ajustes** (⚙️) tem o *link pessoal*, que serve para usar a mesma lista em outro aparelho.
 
 ## Base de filmes (TMDB + JustWatch)
 
-Netflix, Disney+ e Prime Video não têm API pública. Os catálogos e a disponibilidade vêm do **TMDB** (gratuito), que usa os dados do **JustWatch** para dizer onde cada filme está no Brasil e na Irlanda.
+Essas plataformas não têm API pública. Os catálogos e a disponibilidade vêm do **TMDB** (gratuito), que usa os dados do **JustWatch** para dizer onde cada filme está no Brasil e na Irlanda.
 
 1. Crie uma conta em https://www.themoviedb.org/signup
 2. Em https://www.themoviedb.org/settings/api, peça uma chave de API (uso pessoal) e copie o **API Read Access Token** (o token longo).

@@ -87,9 +87,13 @@ h2{font-size:15px;margin:0 0 10px;color:var(--muted);font-weight:700;text-transf
 .pl.netflix{background:#e50914}
 .pl.disney{background:#113ccf}
 .pl.prime{background:#00a8e1;color:#04121c}
+.pl.globoplay{background:#fb0234}
+.pl.appletv{background:#f5f5f7;color:#111}
 .chip.netflix.on{border-color:#e50914}
 .chip.disney.on{border-color:#3b6cff}
 .chip.prime.on{border-color:#00a8e1}
+.chip.globoplay.on{border-color:#fb0234}
+.chip.appletv.on{border-color:#f5f5f7}
 .subhead{font-size:12px;color:var(--muted);font-weight:700;margin:14px 0 6px;text-transform:uppercase;letter-spacing:.04em}
 .credit{font-size:11px;color:var(--muted);text-align:center;margin-top:8px}
 a{color:var(--accent)}
@@ -146,7 +150,7 @@ function sameMovie(a, b){
   return !a.y || !b.y || a.y === b.y;
 }
 
-const PLATFORMS = {netflix: 'Netflix', disney: 'Disney+', prime: 'Prime Video'};
+const PLATFORMS = {netflix: 'Netflix', disney: 'Disney+', prime: 'Prime Video', globoplay: 'Globoplay', appletv: 'Apple TV'};
 
 // Where-to-watch link: TMDB page (JustWatch data) for new movies, IMDb for old ones.
 function imdbLink(m){
@@ -409,6 +413,8 @@ function renderAdd(){
         <button class="chip netflix" data-platform="netflix">Netflix</button>
         <button class="chip disney" data-platform="disney">Disney+</button>
         <button class="chip prime" data-platform="prime">Prime Video</button>
+        <button class="chip globoplay" data-platform="globoplay">Globoplay</button>
+        <button class="chip appletv" data-platform="appletv">Apple TV</button>
       </div>
       <input class="field" id="search" placeholder="Buscar filme…" autocomplete="off" enterkeyhint="search">
       <div class="status" id="searchStatus"></div>
@@ -524,7 +530,7 @@ function setupSearch(){
     status.textContent = page === 1 ? 'Carregando catálogo…' : '';
     more.innerHTML = page > 1 ? '<div class="empty">Carregando…</div>' : '';
     let d;
-    try { d = await getJson(`/api/catalog?v=2&platform=${S.platform}&region=${S.region}&page=${page}`); }
+    try { d = await getJson(`/api/catalog?v=3&platform=${S.platform}&region=${S.region}&page=${page}`); }
     catch (e) {
       if (seq !== searchSeq) return;
       status.textContent = e.message === 'tmdb_not_configured' ? 'Catálogo não configurado (falta o TMDB_TOKEN).' : 'Catálogo indisponível agora.';
@@ -549,7 +555,7 @@ function setupSearch(){
     if (q.length < 2) return loadCatalog(1, seq);
     status.textContent = 'Buscando…';
     let d;
-    try { d = await getJson('/api/search?v=2&q=' + encodeURIComponent(q)); }
+    try { d = await getJson('/api/search?v=3&q=' + encodeURIComponent(q)); }
     catch (e) {
       if (seq !== searchSeq) return;
       status.textContent = e.message === 'tmdb_not_configured' ? 'Busca não configurada (falta o TMDB_TOKEN).' : 'Busca indisponível agora.';
