@@ -49,7 +49,7 @@ h2{font-size:15px;margin:0 0 10px;color:var(--muted);font-weight:700;text-transf
   padding:10px 16px calc(10px + env(safe-area-inset-bottom));
   background:rgba(11,16,32,.94);border-top:1px solid var(--line);backdrop-filter:blur(8px);
 }
-.tabs button{flex:1;max-width:240px;background:transparent;border:0;border-radius:12px;padding:10px;color:var(--muted);font-weight:700;cursor:pointer}
+.tabs button{flex:1;max-width:200px;white-space:nowrap;background:transparent;border:0;border-radius:12px;padding:10px;color:var(--muted);font-weight:700;cursor:pointer}
 .tabs button.on{background:var(--card2);color:var(--text)}
 .list{display:flex;flex-direction:column;gap:8px}
 .movie{display:flex;gap:12px;align-items:center;background:var(--card2);border:1px solid var(--line);border-radius:14px;padding:8px}
@@ -80,6 +80,7 @@ h2{font-size:15px;margin:0 0 10px;color:var(--muted);font-weight:700;text-transf
 .chip{background:var(--card2);border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:13px;cursor:pointer;color:var(--muted)}
 .chip.on{color:var(--text);border-color:var(--accent)}
 .hidden{display:none!important}
+#saveStatus:not(:empty)::before{content:'· '}
 .pls{display:inline-flex;gap:4px;flex-wrap:wrap;vertical-align:middle;margin-top:4px}
 .pl{font-size:11px;font-weight:800;border-radius:6px;padding:2px 7px;color:#fff;white-space:nowrap;letter-spacing:.01em}
 .pl .cc{font-weight:600;opacity:.85;font-size:10px;margin-left:2px}
@@ -97,6 +98,7 @@ a{color:var(--accent)}
 <body>
 <div class="app" id="app"></div>
 <nav class="tabs hidden" id="tabs">
+  <button data-tab="add">🔎 Buscar</button>
   <button data-tab="mine">🎬 Minha lista</button>
   <button data-tab="people">👥 Pessoas</button>
 </nav>
@@ -333,6 +335,7 @@ async function enterGroup(){
     S.me.name = r.name;
   } catch { S.mine = []; }
   $tabs.classList.remove('hidden');
+  S.tab = S.mine.length ? 'mine' : 'add';
   render();
 }
 
@@ -347,12 +350,13 @@ function render(){
   if (S.view) return renderPerson(S.view);
   if (S.tab === 'people') return renderPeople();
   if (S.tab === 'settings') return renderSettings();
+  if (S.tab === 'add') return renderAdd();
   renderMine();
 }
 
 function header(extra = ''){
   return `<div class="top">
-    <div><div class="title">${esc(S.group.name)}</div><div class="sub">Olá, ${esc(S.me.name)} · <span id="saveStatus">${S.saving ? 'Salvando…' : S.dirty ? 'Alterações pendentes' : ''}</span></div></div>
+    <div><div class="title">${esc(S.group.name)}</div><div class="sub">Olá, ${esc(S.me.name)} <span id="saveStatus">${S.saving ? 'Salvando…' : S.dirty ? 'Alterações pendentes' : ''}</span></div></div>
     <div class="row">${extra}
       <button class="icon-btn" id="share" title="Compartilhar link">🔗</button>
       <button class="icon-btn" id="settings" title="Ajustes">⚙️</button>
@@ -390,8 +394,8 @@ function bindChips(){
   document.querySelectorAll('[data-sort]').forEach(b => b.onclick = () => { S.sort = b.dataset.sort; render(); });
 }
 
-// ---------- my list ----------
-function renderMine(){
+// ---------- search tab ----------
+function renderAdd(){
   $app.innerHTML = header() + `
     <div class="card stack">
       <h2>Adicionar filme</h2>
@@ -411,7 +415,14 @@ function renderMine(){
       <div class="list results" id="results"></div>
       <div id="more"></div>
       <div class="credit">Filmes: TMDB · Disponibilidade no Brasil e na Irlanda: JustWatch</div>
-    </div>
+    </div>`;
+  bindHeader();
+  setupSearch();
+}
+
+// ---------- my list tab ----------
+function renderMine(){
+  $app.innerHTML = header() + `
     <div class="card">
       <div class="row" style="justify-content:space-between;margin-bottom:10px">
         <h2 style="margin:0">Já vi · <span class="count" style="font-size:15px;color:var(--text)">${S.mine.length}</span></h2>
@@ -419,22 +430,25 @@ function renderMine(){
       </div>
       ${S.mine.length > 8 ? `<input class="field" id="filter" placeholder="Filtrar minha lista…" value="${esc(S.filter)}" style="margin-bottom:10px">` : ''}
       <div class="list" id="mineList"></div>
+      ${S.mine.length ? '' : '<button class="btn" id="goAdd" style="width:100%;margin-top:10px">🔎 Buscar filmes</button>'}
     </div>`;
   bindHeader(); bindChips();
   drawMineList();
   const f = document.getElementById('filter');
   if (f) f.oninput = () => { S.filter = f.value; drawMineList(); };
-  setupSearch();
+  const g = document.getElementById('goAdd');
+  if (g) g.onclick = () => setTab('add');
 }
 
 function drawMineList(){
   const el = document.getElementById('mineList');
+  if (!el) return; // not on the list tab
   const list = filtered(sorted(S.mine));
   el.innerHTML = list.length ? list.map(m => `
     <div class="movie">${posterHtml(m)}
       <div class="info"><div class="name">${esc(m.t)}</div><div class="meta">${m.y || ''}${imdbLink(m)}</div>${plHtml(m)}</div>
       <button class="btn danger small" data-del="${esc(m.k)}" title="Remover">✕</button>
-    </div>`).join('') : `<div class="empty">${S.mine.length ? 'Nada encontrado.' : 'Nenhum filme ainda. Busque acima e marque os que você já viu!'}</div>`;
+    </div>`).join('') : `<div class="empty">${S.mine.length ? 'Nada encontrado.' : 'Nenhum filme ainda. Busque e marque os que você já viu!'}</div>`;
   el.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
     const m = S.mine.find(x => x.k === b.dataset.del);
     if (!m) return;
