@@ -38,6 +38,13 @@ const PROVIDER_TO_PLATFORM = Object.fromEntries(
   Object.entries(PLATFORMS).flatMap(([name, ids]) => ids.map(id => [id, name]))
 );
 const ALL_PROVIDERS = Object.keys(PROVIDER_TO_PLATFORM).join('|');
+// Saved as "<platform>-<country>", e.g. "netflix-BR". Old entries have no country (= BR).
+const PL_RE = /^(netflix|disney|prime)(-[A-Z]{2})?$/;
+
+function regionsOf(env) {
+  const list = String(env.REGIONS || 'BR,IE').split(',').map(r => r.trim().toUpperCase()).filter(r => /^[A-Z]{2}$/.test(r));
+  return list.length ? list : ['BR'];
+}
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), {
@@ -80,7 +87,7 @@ function cleanMovies(list) {
     const p = cleanText(m.p, 300);
     if (p.startsWith('https://')) movie.p = p;
     if (Array.isArray(m.pl)) {
-      const pl = [...new Set(m.pl.filter(x => PLATFORM_IDS.includes(x)))];
+      const pl = [...new Set(m.pl.filter(x => typeof x === 'string' && PL_RE.test(x)))].slice(0, 20);
       if (pl.length) movie.pl = pl;
     }
     const a = Number(m.a);
@@ -191,7 +198,7 @@ async function leaveGroup(request, env, code, id, index) {
 
 // ---------- movie catalog (TMDB + JustWatch) ----------
 // Search and platform catalogs come from TMDB. Availability ("where to
-// watch") is TMDB's JustWatch data for the region in env.REGION (BR).
+// watch") is TMDB's JustWatch data for the countries in env.REGIONS (BR,IE).
 // Every answer is cached at the edge for 12h, so repeated searches and
 // catalog pages don't call TMDB (or count much) again.
 
@@ -208,18 +215,21 @@ async function tmdb(env, path, params = {}) {
   return res.json();
 }
 
-// Platforms where the movie is included in the subscription in the region.
-async function platformsOf(env, id, region) {
+// Platforms where the movie is included in the subscription, per country.
+// One TMDB call returns every country, so more regions cost nothing extra.
+// Result: ["netflix-BR", "netflix-IE", "prime-IE", ...]
+async function platformsOf(env, id, regions) {
   try {
     const data = await tmdb(env, `/movie/${id}/watch/providers`);
-    const r = (data.results || {})[region] || {};
-    const offers = [...(r.flatrate || []), ...(r.ads || [])];
-    const found = new Set();
-    for (const o of offers) {
-      const name = PROVIDER_TO_PLATFORM[o.provider_id];
-      if (name) found.add(name);
+    const out = [];
+    for (const name of PLATFORM_IDS) {
+      for (const region of regions) {
+        const r = (data.results || {})[region] || {};
+        const offers = [...(r.flatrate || []), ...(r.ads || [])];
+        if (offers.some(o => PROVIDER_TO_PLATFORM[o.provider_id] === name)) out.push(`${name}-${region}`);
+      }
     }
-    return PLATFORM_IDS.filter(n => found.has(n));
+    return out;
   } catch {
     return [];
   }
@@ -251,53 +261,68 @@ async function cached(request, compute) {
 }
 
 // GET /api/search?q=matrix
-//   results: on Netflix / Disney+ / Prime (with "pl")
+//   results: on Netflix / Disney+ / Prime in any region (with "pl")
 //   others:  found, but not on those platforms right now
 async function searchMovies(request, env, url) {
   if (!env.TMDB_TOKEN) return fail('tmdb_not_configured', 503);
   const q = cleanText(url.searchParams.get('q'), 80);
   if (q.length < 2) return json({ ok: true, results: [], others: [] });
-  const region = env.REGION || 'BR';
+  const regions = regionsOf(env);
 
   return cached(request, async () => {
     const data = await tmdb(env, '/search/movie', {
-      query: q, language: 'pt-BR', region, include_adult: 'false', page: '1'
+      query: q, language: 'pt-BR', include_adult: 'false', page: '1'
     });
     const top = (data.results || []).slice(0, 15).map(toMovie);
-    const pls = await Promise.all(top.map(m => platformsOf(env, m.id, region)));
+    const pls = await Promise.all(top.map(m => platformsOf(env, m.id, regions)));
     const results = [], others = [];
     top.forEach((m, i) => (pls[i].length ? results.push({ ...m, pl: pls[i] }) : others.push(m)));
     return { results, others };
   });
 }
 
-// GET /api/catalog?platform=netflix&page=1  -> popular movies on that platform
+// GET /api/catalog?platform=netflix&region=IE&page=1 -> popular movies there.
+// region=all mixes every region (up to 12 movies of each per page).
 async function catalog(request, env, url) {
   if (!env.TMDB_TOKEN) return fail('tmdb_not_configured', 503);
+  const regions = regionsOf(env);
   const platform = url.searchParams.get('platform') || 'all';
   if (platform !== 'all' && !PLATFORMS[platform]) return fail('bad_platform');
+  const region = (url.searchParams.get('region') || 'all').toUpperCase();
+  if (region !== 'ALL' && !regions.includes(region)) return fail('bad_region');
   const page = Math.min(Math.max(parseInt(url.searchParams.get('page'), 10) || 1, 1), 50);
-  const region = env.REGION || 'BR';
+  const targets = region === 'ALL' ? regions : [region];
+  // Stay well under the 50 subrequests per request limit of the free plan.
+  const perRegion = Math.floor(36 / targets.length);
 
   return cached(request, async () => {
-    const data = await tmdb(env, '/discover/movie', {
+    const pages = await Promise.all(targets.map(r => tmdb(env, '/discover/movie', {
       language: 'pt-BR',
-      watch_region: region,
+      watch_region: r,
       with_watch_providers: platform === 'all' ? ALL_PROVIDERS : PLATFORMS[platform].join('|'),
       with_watch_monetization_types: 'flatrate|ads',
       sort_by: 'popularity.desc',
       include_adult: 'false',
       page: String(page)
-    });
-    const movies = (data.results || []).map(toMovie);
-    const pls = await Promise.all(movies.map(m => platformsOf(env, m.id, region)));
+    }).catch(() => ({ results: [], total_pages: 0 }))));
+
+    const seen = new Set();
+    const movies = [];
+    // Interleave regions so a mixed page shows both.
+    for (let i = 0; i < perRegion; i++) {
+      for (const p of pages) {
+        const r = (p.results || [])[i];
+        if (r && !seen.has(r.id)) { seen.add(r.id); movies.push(toMovie(r)); }
+      }
+    }
+
+    const pls = await Promise.all(movies.map(m => platformsOf(env, m.id, regions)));
     const results = movies
-      .map((m, i) => ({
-        ...m,
-        pl: platform === 'all' ? pls[i] : PLATFORM_IDS.filter(n => n === platform || pls[i].includes(n))
-      }))
-      .filter(m => m.pl.length);
-    return { results, page, more: page < Math.min(data.total_pages || 1, 50) };
+      .map((m, i) => ({ ...m, pl: pls[i] }))
+      .filter(m => m.pl.some(x => (platform === 'all' || x.startsWith(platform + '-')) &&
+                                  (region === 'ALL' || x.endsWith('-' + region))));
+    const more = pages.some(p => page < Math.min(p.total_pages || 0, 50));
+    return { results, page, more };
   });
 }
 

@@ -82,6 +82,7 @@ h2{font-size:15px;margin:0 0 10px;color:var(--muted);font-weight:700;text-transf
 .hidden{display:none!important}
 .pls{display:inline-flex;gap:4px;flex-wrap:wrap;vertical-align:middle;margin-top:4px}
 .pl{font-size:11px;font-weight:800;border-radius:6px;padding:2px 7px;color:#fff;white-space:nowrap;letter-spacing:.01em}
+.pl .cc{font-weight:600;opacity:.85;font-size:10px;margin-left:2px}
 .pl.netflix{background:#e50914}
 .pl.disney{background:#113ccf}
 .pl.prime{background:#00a8e1;color:#04121c}
@@ -148,15 +149,37 @@ const PLATFORMS = {netflix: 'Netflix', disney: 'Disney+', prime: 'Prime Video'};
 // Where-to-watch link: TMDB page (JustWatch data) for new movies, IMDb for old ones.
 function imdbLink(m){
   const tm = /^tmdb:(\d+)$/.exec(m.k || '');
-  if (tm) return ` · <a href="https://www.themoviedb.org/movie/${tm[1]}/watch?locale=BR" target="_blank" rel="noopener">Onde assistir ↗</a>`;
+  if (tm) return ` · <a href="https://www.themoviedb.org/movie/${tm[1]}/watch?locale=${S.region === 'IE' ? 'IE' : 'BR'}" target="_blank" rel="noopener">Onde assistir ↗</a>`;
   const id = /^imdb:(tt\d+)$/.exec(m.k || '');
   return id ? ` · <a href="https://www.imdb.com/title/${id[1]}/" target="_blank" rel="noopener">IMDb ↗</a>` : '';
 }
 
-// Badges with the platforms where the movie is available.
+const REGIONS = {BR: {name: 'Brasil', flag: '🇧🇷'}, IE: {name: 'Irlanda', flag: '🇮🇪'}};
+
+// "netflix-IE" -> ['netflix', 'IE']; old entries without country are Brasil.
+function splitPl(x){
+  const [p, r] = String(x).split('-');
+  return [p, r || 'BR'];
+}
+function matchesFilter(m){
+  return (m.pl || []).some(x => {
+    const [p, r] = splitPl(x);
+    return PLATFORMS[p] && (S.platform === 'all' || p === S.platform) && (S.region === 'all' || r === S.region);
+  });
+}
+
+// Badges with the platforms and countries where the movie is available,
+// e.g. [Netflix BR IE] [Prime Video IE]
 function plHtml(m){
-  const pl = (m.pl || []).filter(x => PLATFORMS[x]);
-  return pl.length ? `<div class="pls">${pl.map(x => `<span class="pl ${x}">${PLATFORMS[x]}</span>`).join('')}</div>` : '';
+  const by = {};
+  (m.pl || []).forEach(x => {
+    const [p, r] = splitPl(x);
+    if (PLATFORMS[p]) (by[p] = by[p] || []).includes(r) || by[p].push(r);
+  });
+  const keys = Object.keys(PLATFORMS).filter(p => by[p]);
+  return keys.length ? `<div class="pls">${keys.map(p =>
+    `<span class="pl ${p}" title="${by[p].map(r => (REGIONS[r] || {name: r}).name).join(', ')}">${PLATFORMS[p]} <span class="cc">${by[p].join(' ')}</span></span>`
+  ).join('')}</div>` : '';
 }
 
 function posterHtml(m){
@@ -372,6 +395,11 @@ function renderMine(){
   $app.innerHTML = header() + `
     <div class="card stack">
       <h2>Adicionar filme</h2>
+      <div class="chips" id="regionChips">
+        <button class="chip" data-region="all">🌍 Brasil + Irlanda</button>
+        <button class="chip" data-region="BR">🇧🇷 Brasil</button>
+        <button class="chip" data-region="IE">🇮🇪 Irlanda</button>
+      </div>
       <div class="chips" id="platformChips">
         <button class="chip" data-platform="all">Todas</button>
         <button class="chip netflix" data-platform="netflix">Netflix</button>
@@ -382,7 +410,7 @@ function renderMine(){
       <div class="status" id="searchStatus"></div>
       <div class="list results" id="results"></div>
       <div id="more"></div>
-      <div class="credit">Filmes: TMDB · Disponibilidade no Brasil: JustWatch</div>
+      <div class="credit">Filmes: TMDB · Disponibilidade no Brasil e na Irlanda: JustWatch</div>
     </div>
     <div class="card">
       <div class="row" style="justify-content:space-between;margin-bottom:10px">
@@ -432,6 +460,13 @@ function addMine(movie){
 // Movie base: Netflix, Disney+ and Prime Video catalogs (via the Worker,
 // TMDB + JustWatch data). Responses are cached by the browser and the edge.
 S.platform = 'all';
+S.region = (() => { try { return localStorage.getItem('javi:region') || 'all'; } catch { return 'all'; } })();
+if (S.region !== 'all' && !REGIONS[S.region]) S.region = 'all';
+
+function whereText(){
+  const reg = S.region === 'all' ? '' : ' (' + REGIONS[S.region].name + ')';
+  return (S.platform === 'all' ? 'nas plataformas' : 'na ' + PLATFORMS[S.platform]) + reg;
+}
 async function getJson(url){
   const r = await fetch(url);
   const d = await r.json().catch(() => ({}));
@@ -454,6 +489,7 @@ function setupSearch(){
   const results = document.getElementById('results');
   const more = document.getElementById('more');
   const chips = document.getElementById('platformChips');
+  const regionChips = document.getElementById('regionChips');
   let items = [];
 
   const bindAdds = () => results.querySelectorAll('[data-add]').forEach(b => b.onclick = () => {
@@ -464,15 +500,17 @@ function setupSearch(){
     }
   });
 
-  const paintChips = () => chips.querySelectorAll('[data-platform]').forEach(c =>
-    c.classList.toggle('on', c.dataset.platform === S.platform));
+  const paintChips = () => {
+    chips.querySelectorAll('[data-platform]').forEach(c => c.classList.toggle('on', c.dataset.platform === S.platform));
+    regionChips.querySelectorAll('[data-region]').forEach(c => c.classList.toggle('on', c.dataset.region === S.region));
+  };
 
   // Empty search: popular movies of the chosen platform.
   const loadCatalog = async (page, seq) => {
     status.textContent = page === 1 ? 'Carregando catálogo…' : '';
     more.innerHTML = page > 1 ? '<div class="empty">Carregando…</div>' : '';
     let d;
-    try { d = await getJson(`/api/catalog?platform=${S.platform}&page=${page}`); }
+    try { d = await getJson(`/api/catalog?platform=${S.platform}&region=${S.region}&page=${page}`); }
     catch (e) {
       if (seq !== searchSeq) return;
       status.textContent = e.message === 'tmdb_not_configured' ? 'Catálogo não configurado (falta o TMDB_TOKEN).' : 'Catálogo indisponível agora.';
@@ -482,7 +520,7 @@ function setupSearch(){
     const fresh = d.results.filter(m => !items.some(x => x.k === m.k));
     const startIdx = items.length;
     items = items.concat(fresh);
-    status.textContent = page === 1 ? `Populares ${S.platform === 'all' ? 'nas plataformas' : 'na ' + PLATFORMS[S.platform]}` : '';
+    status.textContent = page === 1 ? `Populares ${whereText()}` : '';
     results.insertAdjacentHTML('beforeend', fresh.map((m, i) => resultRow(m, startIdx + i)).join(''));
     bindAdds();
     more.innerHTML = d.more ? '<button class="btn ghost" id="moreBtn" style="width:100%;margin-top:8px">Carregar mais</button>' : '';
@@ -503,13 +541,13 @@ function setupSearch(){
       return;
     }
     if (seq !== searchSeq) return;
-    const onPlatform = d.results.filter(m => S.platform === 'all' || m.pl.includes(S.platform));
+    const onPlatform = d.results.filter(matchesFilter);
     const others = d.results.filter(m => !onPlatform.includes(m)).concat(d.others);
     items = onPlatform.concat(others);
-    const where = S.platform === 'all' ? 'nas plataformas' : 'na ' + PLATFORMS[S.platform];
+    const where = whereText();
     status.textContent = onPlatform.length ? '' : `Nenhum resultado disponível ${where}.`;
     results.innerHTML = onPlatform.map(resultRow).join('') +
-      (others.length ? `<div class="subhead">Não ${S.platform === 'all' ? 'está nas plataformas' : 'está ' + where} agora</div>` +
+      (others.length ? `<div class="subhead">Não está ${where} agora</div>` +
         others.map((m, i) => resultRow(m, onPlatform.length + i)).join('') : '');
     bindAdds();
   };
@@ -518,6 +556,12 @@ function setupSearch(){
     const c = e.target.closest('[data-platform]');
     if (!c || c.dataset.platform === S.platform) return;
     S.platform = c.dataset.platform; paintChips(); run();
+  };
+  regionChips.onclick = e => {
+    const c = e.target.closest('[data-region]');
+    if (!c || c.dataset.region === S.region) return;
+    S.region = c.dataset.region; paintChips(); run();
+    try { localStorage.setItem('javi:region', S.region); } catch {}
   };
   paintChips();
   input.oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(run, 500); };

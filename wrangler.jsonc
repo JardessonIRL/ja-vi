@@ -5,10 +5,10 @@
 
   "main": "src/index.js",
 
-  // Region used for "where to watch" (Netflix / Disney+ / Prime Video).
+  // Countries of the Netflix / Disney+ / Prime Video catalogs (comma separated).
   // The TMDB token is a secret: `npx wrangler secret put TMDB_TOKEN`
   "vars": {
-    "REGION": "BR"
+    "REGIONS": "BR,IE"
   },
 
   // Static files are served straight from the asset store (no Worker run).
