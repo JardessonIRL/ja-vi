@@ -7,6 +7,7 @@ App para um grupo marcar os filmes que já assistiu e ver a lista de cada pessoa
 - A base de filmes vem das plataformas **Netflix**, **Disney+**, **Prime Video**, **Globoplay** e **Apple TV** (catálogos do **Brasil** e da **Irlanda**). Dá para navegar pelos populares de cada plataforma ou buscar pelo nome.
 - Cada filme mostra, na frente do título, em qual plataforma e em qual país está disponível (ex.: `Netflix BR IE`, `Prime Video IE`). Dá para filtrar por país: Brasil, Irlanda ou os dois. Isso também aparece na sua lista e na lista das outras pessoas.
 - Filmes que não estão em nenhuma delas aparecem separados, em "Não está nas plataformas agora", e também podem ser marcados.
+- Tocar no título ou no cartaz de um filme abre um cartão com o cartaz grande, resumo, duração, gêneros e nota.
 - Em **Ajustes** (⚙️) tem o *link pessoal*, que serve para usar a mesma lista em outro aparelho.
 
 ## Base de filmes (TMDB + JustWatch)

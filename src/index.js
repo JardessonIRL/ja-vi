@@ -361,6 +361,32 @@ async function catalog(request, env, url) {
   });
 }
 
+// GET /api/movie?id=603 -> details for the movie card (summary, runtime, genres)
+async function movieDetails(request, env, url) {
+  if (!env.TMDB_TOKEN) return fail('tmdb_not_configured', 503);
+  const id = parseInt(url.searchParams.get('id'), 10);
+  if (!id || id < 1) return fail('bad_id');
+
+  return cached(request, async () => {
+    let d = await tmdb(env, `/movie/${id}`, { language: 'pt-BR' });
+    let overview = cleanText(d.overview, 2000);
+    if (!overview) {
+      // No Portuguese summary: fall back to the English one.
+      const en = await tmdb(env, `/movie/${id}`, { language: 'en-US' }).catch(() => null);
+      if (en) overview = cleanText(en.overview, 2000);
+    }
+    return {
+      movie: {
+        ...toMovie(d),
+        overview,
+        runtime: d.runtime || 0,
+        genres: (d.genres || []).map(g => g.name).slice(0, 4),
+        rating: d.vote_count > 10 ? Math.round(d.vote_average * 10) / 10 : 0
+      }
+    };
+  });
+}
+
 // ---------- router ----------
 
 export default {
@@ -376,6 +402,7 @@ export default {
         env = { ...env, budget: { left: 45 } };
         if (parts[1] === 'search') return await searchMovies(request, env, url);
         if (parts[1] === 'catalog') return await catalog(request, env, url);
+        if (parts[1] === 'movie') return await movieDetails(request, env, url);
       }
 
       if (parts.length === 2 && parts[1] === 'g' && method === 'POST') {
