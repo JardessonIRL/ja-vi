@@ -10,6 +10,15 @@ App para um grupo marcar os filmes que já assistiu e ver a lista de cada pessoa
 - Tocar no título ou no cartaz de um filme abre um cartão com o cartaz grande, resumo, duração, gêneros e nota.
 - Em **Ajustes** (⚙️) tem o *link pessoal*, que serve para usar a mesma lista em outro aparelho.
 
+## Instalar no celular
+
+O site funciona como app: tem `manifest.json` e ícones (`dist/icon-*.png`, gerados a partir de `dist/icon.svg`).
+
+- **Android (Chrome):** menu ⋮ → **Adicionar à tela inicial** / **Instalar app**.
+- **iPhone (Safari):** botão Compartilhar → **Adicionar à Tela de Início**.
+
+O app instalado abre direto no último grupo usado.
+
 ## Base de filmes (TMDB + JustWatch)
 
 Essas plataformas não têm API pública. Os catálogos e a disponibilidade vêm do **TMDB** (gratuito), que usa os dados do **JustWatch** para dizer onde cada filme está no Brasil e na Irlanda.

@@ -8,7 +8,13 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Já Vi">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="/icon.svg">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <style>
 :root{
   --bg:#0b1020; --card:#151c30; --card2:#1d2740; --text:#f8fafc; --muted:#94a3b8;
@@ -236,7 +242,17 @@ function parseRoute(){
 
 async function start(){
   const code = parseRoute();
-  if (!code) return renderHome();
+  if (!code) {
+    // Installed app opens at "/": go straight to the last group used.
+    // "/?home=1" (the links inside the app) always shows the home screen.
+    const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+    let last = null;
+    try { last = localStorage.getItem('javi:last'); } catch {}
+    if (standalone && last && !location.search.includes('home') && (loadStore()[last] || {}).id) {
+      return location.replace('/g/' + last);
+    }
+    return renderHome();
+  }
 
   S.code = code;
   const store = loadStore();
@@ -255,7 +271,8 @@ async function start(){
     await loadGroup();
   } catch (e) {
     $app.innerHTML = `<div class="hero"><div class="emoji">🤔</div><div class="title">Grupo não encontrado</div>
-      <p class="sub">Confira o link ou crie um grupo novo.</p><a class="btn" href="/" style="display:inline-block;text-decoration:none">Início</a></div>`;
+      <p class="sub">Confira o link ou crie um grupo novo.</p><a class="btn" href="/?home=1" style="display:inline-block;text-decoration:none">Início</a></div>`;
+    try { if (localStorage.getItem('javi:last') === code) localStorage.removeItem('javi:last'); } catch {}
     return;
   }
 
@@ -359,6 +376,7 @@ async function enterGroup(){
     S.me.name = r.name;
   } catch { S.mine = []; }
   $tabs.classList.remove('hidden');
+  try { localStorage.setItem('javi:last', S.code); } catch {}
   S.tab = S.mine.length ? 'mine' : 'add';
   render();
 }
@@ -820,7 +838,7 @@ function renderSettings(){
     <div class="card stack">
       <h2>Sair</h2>
       <button class="btn danger" id="leave" style="width:100%">Sair do grupo e apagar minha lista</button>
-      <a href="/" class="sub" style="display:block;text-align:center">Ir para o início (outros grupos)</a>
+      <a href="/?home=1" class="sub" style="display:block;text-align:center">Ir para o início (outros grupos)</a>
     </div>`;
   [...$tabs.children].forEach(b => b.classList.remove('on'));
   document.getElementById('back').onclick = () => setTab('mine');
