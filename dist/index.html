@@ -96,6 +96,7 @@ h2{font-size:15px;margin:0 0 10px;color:var(--muted);font-weight:700;text-transf
 .sheet h3{margin:0;font-size:21px;line-height:1.25;text-align:center}
 .sheet .facts{color:var(--muted);font-size:13px;text-align:center;margin-top:4px}
 .sheet .pls{display:flex;justify-content:center;margin-top:10px}
+.sheet .inlist{text-align:center;color:var(--good);font-weight:700;font-size:14px;margin-bottom:10px}
 .sheet .overview{margin:14px 0 16px;line-height:1.55;font-size:15px;white-space:pre-line}
 .hidden{display:none!important}
 #saveStatus:not(:empty)::before{content:'· '}
@@ -388,6 +389,7 @@ function setTab(tab){
 $tabs.onclick = e => { const b = e.target.closest('button'); if (b) setTab(b.dataset.tab); };
 
 function render(){
+  S.refreshSub = null;
   [...$tabs.children].forEach(b => b.classList.toggle('on', b.dataset.tab === S.tab && !S.view));
   if (S.view) return renderPerson(S.view);
   if (S.tab === 'people') return renderPeople();
@@ -491,21 +493,42 @@ function drawMineList(){
   el.innerHTML = list.length ? list.map(m => `
     <div class="movie">${posterHtml(m)}
       <div class="info">${nameHtml(m)}<div class="meta">${m.y || ''}${imdbLink(m)}</div>${plHtml(m)}</div>
-      <button class="btn danger small" data-del="${esc(m.k)}" title="Remover">✕</button>
     </div>`).join('') : `<div class="empty">${S.mine.length ? 'Nada encontrado.' : 'Nenhum filme ainda. Busque e marque os que você já viu!'}</div>`;
-  el.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
-    const m = S.mine.find(x => x.k === b.dataset.del);
-    if (!m) return;
-    S.mine = S.mine.filter(x => x !== m);
-    scheduleSave(); drawMineList(); updateCount();
-    toast(`Removido: ${m.t}`);
-  });
 }
 function updateCount(){
   const c = document.querySelector('#app .count'); if (c) c.textContent = S.mine.length;
 }
 
 function hasMine(movie){ return S.mine.some(m => sameMovie(m, movie)); }
+
+function removeMine(movie){
+  const before = S.mine.length;
+  S.mine = S.mine.filter(m => !sameMovie(m, movie));
+  if (S.mine.length === before) return false;
+  scheduleSave();
+  toast(`Removido: ${movie.t}`);
+  return true;
+}
+
+// Repaint the row behind the card (search, other person's list) as watched / not watched.
+function markRow(key, watched){
+  const opener = [...$app.querySelectorAll('[data-open]')].find(el => el.dataset.open === key);
+  const row = opener && opener.closest('.movie');
+  const slot = row && row.querySelector('.badge, button[data-add], button[data-also]');
+  if (!slot) return;
+  const person = !!row.closest('#personList');
+  slot.outerHTML = watched
+    ? `<span class="badge">${person ? '✓ Eu também' : '✓ Já vi'}</span>`
+    : person ? `<button class="btn ghost small" data-also="${esc(key)}">+ Também vi</button>`
+             : `<button class="btn small" data-add="${row.dataset.i}">Já vi</button>`;
+}
+
+// After a change made from the movie card: refresh whatever is behind it.
+function afterSheetChange(m, watched){
+  if (S.tab === 'mine' && !S.view) { drawMineList(); updateCount(); }
+  else markRow(m.k, watched);
+  if (S.view && S.refreshSub) S.refreshSub();
+}
 
 function addMine(movie){
   if (hasMine(movie)) { toast('Já está na sua lista'); return false; }
@@ -533,7 +556,7 @@ async function getJson(url){
 }
 
 function resultRow(m, i){
-  return `<div class="movie">${posterHtml(m)}
+  return `<div class="movie" data-i="${i}">${posterHtml(m)}
     <div class="info">${nameHtml(m)}
       <div class="meta">${m.y || ''}${m.o ? ' · ' + esc(m.o) : ''}</div>${plHtml(m)}</div>
     ${hasMine(m) ? '<span class="badge">✓ Já vi</span>' : `<button class="btn small" data-add="${i}">Já vi</button>`}
@@ -550,13 +573,12 @@ function setupSearch(){
   const regionChips = document.getElementById('regionChips');
   let items = [];
 
-  const bindAdds = () => results.querySelectorAll('[data-add]').forEach(b => b.onclick = () => {
+  results.onclick = e => {
+    const b = e.target.closest('[data-add]');
+    if (!b) return;
     const m = items[Number(b.dataset.add)];
-    if (m && addMine(m)) {
-      b.outerHTML = '<span class="badge">✓ Já vi</span>';
-      drawMineList(); updateCount();
-    }
-  });
+    if (m && addMine(m)) b.outerHTML = '<span class="badge">✓ Já vi</span>';
+  };
 
   const paintChips = () => {
     chips.querySelectorAll('[data-platform]').forEach(c => c.classList.toggle('on', c.dataset.platform === S.platform));
@@ -581,7 +603,6 @@ function setupSearch(){
     status.textContent = d.failed ? 'Algumas plataformas não carregaram. Tente de novo em alguns segundos.'
       : page === 1 ? `Populares ${whereText()}` : '';
     results.insertAdjacentHTML('beforeend', fresh.map((m, i) => resultRow(m, startIdx + i)).join(''));
-    bindAdds();
     more.innerHTML = d.more ? '<button class="btn ghost" id="moreBtn" style="width:100%;margin-top:8px">Carregar mais</button>' : '';
     if (d.more) document.getElementById('moreBtn').onclick = () => loadCatalog(page + 1, seq);
   };
@@ -609,7 +630,6 @@ function setupSearch(){
     results.innerHTML = onPlatform.map(resultRow).join('') +
       (others.length ? `<div class="subhead">Não está ${where} agora</div>` +
         others.map((m, i) => resultRow(m, onPlatform.length + i)).join('') : '');
-    bindAdds();
   };
 
   chips.onclick = e => {
@@ -657,17 +677,21 @@ function drawSheet(m, d, state){
     <div class="facts">${facts}${original ? `${facts ? '<br>' : ''}Título original: ${esc(original)}` : ''}</div>
     ${plHtml(m)}
     <p class="overview">${overview}</p>
-    ${hasMine(m) ? '<button class="btn ghost" disabled style="width:100%">✓ Está na sua lista</button>'
+    ${hasMine(m) ? `<div class="inlist">✓ Está na sua lista</div>
+                    <button class="btn danger" id="sheetRemove" style="width:100%">Marquei errado · Remover da minha lista</button>`
                  : '<button class="btn" id="sheetAdd" style="width:100%">Já vi</button>'}`;
   document.getElementById('sheetClose').onclick = closeSheet;
   const add = document.getElementById('sheetAdd');
   if (add) add.onclick = () => {
     if (!addMine(m)) return;
-    // Mark the row behind the card as watched, without redrawing the screen.
-    const opener = [...$app.querySelectorAll('[data-open]')].find(el => el.dataset.open === m.k);
-    const btn = opener && opener.closest('.movie').querySelector('button[data-add],button[data-also]');
-    if (btn) btn.outerHTML = '<span class="badge">✓ Já vi</span>';
     closeSheet();
+    afterSheetChange(m, true);
+  };
+  const rem = document.getElementById('sheetRemove');
+  if (rem) rem.onclick = () => {
+    if (!removeMine(m)) return;
+    closeSheet();
+    afterSheetChange(m, false);
   };
 }
 
@@ -804,11 +828,14 @@ async function renderPerson(id){
         <div class="info">${nameHtml(m)}<div class="meta">${m.y || ''}${imdbLink(m)}</div>${plHtml(m)}</div>
         ${hasMine(m) ? '<span class="badge">✓ Eu também</span>' : `<button class="btn ghost small" data-also="${esc(m.k)}">+ Também vi</button>`}
       </div>`).join('') : `<div class="empty">${entry.movies.length ? 'Nada encontrado.' : 'Ainda não marcou nenhum filme.'}</div>`;
-    document.querySelectorAll('[data-also]').forEach(b => b.onclick = () => {
-      const m = entry.movies.find(x => x.k === b.dataset.also);
-      if (m && addMine(m)) { b.outerHTML = '<span class="badge">✓ Eu também</span>'; updateSub(); }
-    });
   };
+  document.getElementById('personList').onclick = e => {
+    const b = e.target.closest('[data-also]');
+    if (!b) return;
+    const m = entry.movies.find(x => x.k === b.dataset.also);
+    if (m && addMine(m)) { b.outerHTML = '<span class="badge">✓ Eu também</span>'; updateSub(); }
+  };
+  S.refreshSub = updateSub;
   draw();
   const f = document.getElementById('filter');
   if (f) f.oninput = () => { S.filter = f.value; draw(); };
